@@ -10,8 +10,17 @@
       (function () {
         var path = window.location.pathname;
         var parts = path.split("/").filter(Boolean);
-        var basePath = parts.length > 1 ? "/" + parts[0] : "";
-        var requestedId = parts.length > 0 ? parts[parts.length - 1] : "";
+        var isGitHubPagesProjectSite =
+          window.location.hostname.endsWith(".github.io") && parts.length >= 1;
+        var basePath = isGitHubPagesProjectSite ? "/" + parts[0] : "";
+        var requestedId = "";
+
+        if (isGitHubPagesProjectSite) {
+          requestedId = parts.length >= 2 ? parts[parts.length - 1] : "";
+        } else {
+          requestedId = parts.length > 0 ? parts[parts.length - 1] : "";
+        }
+        
         var destination = window.location.origin + basePath + "/index.html";
 
         if (requestedId && requestedId !== "404.html") {
