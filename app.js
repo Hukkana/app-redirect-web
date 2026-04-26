@@ -77,206 +77,24 @@ function createIdFromUrl(targetUrl, redirects) {
   return candidate;
 }
 
+function getPathSegments() {
+  return window.location.pathname.split("/").filter(Boolean);
+}
+
+function isGitHubPagesProjectSite() {
+  return window.location.hostname.endsWith(".github.io") && getPathSegments().length >= 1;
+}
+
 function getBasePath() {
-  const { pathname } = window.location;
-  const isProjectSite = pathname.split("/").filter(Boolean).length > 0;
-  const firstSlash = pathname.indexOf("/", 1);
-
-  if (!isProjectSite || firstSlash === -1) {
-    return "";
-  }
-
+  const pathname = window.location.pathname;
   const isDirectFile = pathname.endsWith("/index.html") || pathname.endsWith("/404.html");
-  return isDirectFile ? pathname.slice(0, pathname.lastIndexOf("/")) : pathname;
-}
+  const cleanPath = isDirectFile ? pathname.slice(0, pathname.lastIndexOf("/")) : pathname.replace(/\/$/, "");
+  const segments = cleanPath.split("/").filter(Boolean);
 
-function buildRedirectUrl(id) {
-  const origin = window.location.origin;
-  const basePath = getBasePath();
-  return `${origin}${basePath}/${encodeURIComponent(id)}`;
-}
-
-function renderSavedItems() {
-  if (!savedList || !savedItems) {
-    return;
-  }
-
-  const redirects = loadRedirects();
-  const entries = Object.entries(redirects);
-
-  savedItems.innerHTML = "";
-
-  if (entries.length === 0) {
-    savedList.hidden = false;
-    savedItems.innerHTML = '<p class="saved-empty">まだ保存されたリダイレクトはありません。</p>';
-    return;
-  }
-
-  savedList.hidden = false;
-  entries
-    .sort(([a], [b]) => a.localeCompare(b))
-    .forEach(([id, entry]) => {
-      const item = document.createElement("article");
-      item.className = "saved-item";
-      item.innerHTML = `
-        <p class="saved-item-title">${entry.title}</p>
-        <a class="saved-item-link" href="${buildRedirectUrl(id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(id)}</a>
-        <p class="saved-item-meta">${entry.url}</p>
-      `;
-      savedItems.appendChild(item);
-    });
-}
-
-function setFavicon(iconUrl) {
-  let link = document.querySelector('link[rel="icon"]');
-  if (!link) {
-    link = document.createElement("link");
-    link.rel = "icon";
-    document.head.appendChild(link);
-  }
-  link.href = iconUrl;
-}
-
-function getRequestedId() {
-  const url = new URL(window.location.href);
-  const redirectParam = url.searchParams.get("redirect");
-  if (redirectParam) {
-    return redirectParam;
-  }
-
-  const parts = window.location.pathname.split("/").filter(Boolean);
-  if (parts.length === 0) {
+  if (segments.length === 0) {
     return "";
   }
 
-  const last = parts[parts.length - 1];
-  if (last === "index.html" || last === "404.html") {
-    return "";
+  if (isGitHubPagesProjectSite()) {
+    return `/${segments[0]}`;
   }
-
-  return decodeURIComponent(last);
-}
-
-function showRedirectView(entry) {
-  builderView.hidden = true;
-  redirectView.hidden = false;
-
-  document.title = entry.title;
-  setFavicon(entry.icon);
-  redirectTitle.textContent = entry.title;
-  redirectDescription.textContent = "移動中です…";
-  redirectLink.textContent = entry.url;
-
-  setTimeout(() => {
-    window.location.replace(entry.url);
-  }, 80);
-}
-
-function showRedirectNotFound(id) {
-  builderView.hidden = true;
-  redirectView.hidden = false;
-  document.title = "Redirect Not Found";
-  redirectTitle.textContent = "リダイレクト設定が見つかりません";
-  redirectDescription.textContent =
-    "このIDは現在のブラウザのローカルストレージに保存されていません。GitHub Pages版では、作成したのと同じブラウザで開く必要があります。";
-  redirectLink.textContent = id ? `ID: ${id}` : "IDが指定されていません。";
-}
-
-function initRedirectMode() {
-  const id = getRequestedId();
-  if (!id) {
-    renderSavedItems();
-    return;
-  }
-
-  const redirects = loadRedirects();
-  const entry = redirects[id];
-
-  if (!entry) {
-    showRedirectNotFound(id);
-    return;
-  }
-
-  showRedirectView(entry);
-}
-
-if (iconInput) {
-  iconInput.addEventListener("change", async (event) => {
-    const file = event.target.files && event.target.files[0];
-
-    if (!file) {
-      iconDataUrl = "";
-      previewWrap.hidden = true;
-      return;
-    }
-
-    try {
-      iconDataUrl = await fileToDataUrl(file);
-      previewImage.src = iconDataUrl;
-      previewName.textContent = file.name;
-      previewWrap.hidden = false;
-      setStatus("");
-    } catch (error) {
-      iconDataUrl = "";
-      previewWrap.hidden = true;
-      setStatus(error.message, true);
-    }
-  });
-}
-
-if (form) {
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    if (!iconDataUrl) {
-      setStatus("アイコン画像を選択してください。", true);
-      return;
-    }
-
-    submitButton.disabled = true;
-    result.hidden = true;
-    setStatus("作成中です...");
-
-    try {
-      const parsedUrl = new URL(urlInput.value);
-      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-        throw new Error("http/https のURLのみ利用できます。");
-      }
-
-      const redirects = loadRedirects();
-      const id = createIdFromUrl(parsedUrl, redirects);
-
-      redirects[id] = {
-        url: parsedUrl.toString(),
-        title: titleInput.value.trim(),
-        icon: iconDataUrl
-      };
-
-      saveRedirects(redirects);
-
-      const redirectUrl = buildRedirectUrl(id);
-      resultLink.href = redirectUrl;
-      resultLink.textContent = redirectUrl;
-      result.hidden = false;
-      setStatus("専用リダイレクトURLを発行しました。");
-      renderSavedItems();
-    } catch (error) {
-      setStatus(error.message || "作成に失敗しました。", true);
-    } finally {
-      submitButton.disabled = false;
-    }
-  });
-}
-
-if (copyButton) {
-  copyButton.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(resultLink.textContent);
-      setStatus("URLをコピーしました。");
-    } catch {
-      setStatus("コピーに失敗しました。", true);
-    }
-  });
-}
-
-initRedirectMode();
