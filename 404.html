@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirect Builder</title>
+  </head>
+  <body>
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var parts = path.split("/").filter(Boolean);
+        var basePath = parts.length > 1 ? "/" + parts[0] : "";
+        var requestedId = parts.length > 0 ? parts[parts.length - 1] : "";
+        var destination = window.location.origin + basePath + "/index.html";
+
+        if (requestedId && requestedId !== "404.html") {
+          destination += "?redirect=" + encodeURIComponent(requestedId);
+        }
+
+        window.location.replace(destination);
+      })();
+    </script>
+  </body>
+</html>

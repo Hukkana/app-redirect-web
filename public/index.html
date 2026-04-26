@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirect Builder</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="page">
+      <section class="card">
+        <p class="eyebrow">Redirect Builder</p>
+        <h1>URLごとの専用リダイレクトページを作成</h1>
+        <p class="lead">
+          URL、タイトル、アイコン画像を設定すると、専用の <code>/id</code> ページを発行します。
+        </p>
+
+        <form id="create-form" class="form">
+          <label class="field">
+            <span>リダイレクト先URL</span>
+            <input
+              class="input squircle"
+              id="url"
+              name="url"
+              type="url"
+              placeholder="https://example.com"
+              inputmode="url"
+              required
+            >
+          </label>
+
+          <label class="field">
+            <span>タイトル</span>
+            <input
+              class="input squircle"
+              id="title"
+              name="title"
+              type="text"
+              placeholder="My Redirect"
+              maxlength="80"
+              required
+            >
+          </label>
+
+          <label class="field">
+            <span>アイコン画像</span>
+            <input
+              class="input squircle file-input"
+              id="icon"
+              name="icon"
+              type="file"
+              accept="image/*"
+              required
+            >
+          </label>
+
+          <div class="preview-wrap" id="preview-wrap" hidden>
+            <img id="preview-image" class="preview-image" alt="icon preview">
+            <p id="preview-name" class="preview-name"></p>
+          </div>
+
+          <button type="submit" class="button squircle" id="submit-button">作成</button>
+        </form>
+
+        <section id="result" class="result" hidden>
+          <p class="result-label">発行されたURL</p>
+          <div class="result-box">
+            <a id="result-link" href="" target="_blank" rel="noreferrer"></a>
+            <button type="button" class="copy-button squircle" id="copy-button">コピー</button>
+          </div>
+        </section>
+
+        <p id="status" class="status" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
