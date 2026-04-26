@@ -20,6 +20,7 @@ const redirectTitle = document.getElementById("redirect-title");
 const redirectDescription = document.getElementById("redirect-description");
 const redirectLink = document.getElementById("redirect-link");
 
+const ICON_SIZE = 64;
 let iconDataUrl = "";
 
 function loadRedirects() {
@@ -32,7 +33,15 @@ function loadRedirects() {
 }
 
 function saveRedirects(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (error) {
+    if (error && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED")) {
+      throw new Error("保存容量を超えました。画像を小さくして再作成してください。");
+    }
+
+    throw new Error("ブラウザへの保存に失敗しました。");
+  }
 }
 
 function setStatus(message, isError = false) {
@@ -51,6 +60,40 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(new Error("画像の読み込みに失敗しました。"));
     reader.readAsDataURL(file);
   });
+}
+
+function loadImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("画像の変換に失敗しました。"));
+    image.src = source;
+  });
+}
+
+async function fileToIconDataUrl(file) {
+  const source = await fileToDataUrl(file);
+  const image = await loadImage(source);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("画像処理の初期化に失敗しました。");
+  }
+
+  canvas.width = ICON_SIZE;
+  canvas.height = ICON_SIZE;
+
+  const scale = Math.max(ICON_SIZE / image.width, ICON_SIZE / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const offsetX = (ICON_SIZE - drawWidth) / 2;
+  const offsetY = (ICON_SIZE - drawHeight) / 2;
+
+  context.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
+  context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+
+  return canvas.toDataURL("image/png");
 }
 
 function normalizeDomainPart(value) {
@@ -98,3 +141,214 @@ function getBasePath() {
   if (isGitHubPagesProjectSite()) {
     return `/${segments[0]}`;
   }
+
+  if (segments.length === 1) {
+    return "";
+  }
+
+  return `/${segments.slice(0, -1).join("/")}`;
+}
+
+function buildRedirectUrl(id) {
+  const origin = window.location.origin;
+  const basePath = getBasePath();
+  return `${origin}${basePath}/${encodeURIComponent(id)}`;
+}
+
+function renderSavedItems() {
+  if (!savedList || !savedItems) {
+    return;
+  }
+
+  const redirects = loadRedirects();
+  const entries = Object.entries(redirects);
+
+  savedItems.innerHTML = "";
+
+  if (entries.length === 0) {
+    savedList.hidden = false;
+    savedItems.innerHTML = '<p class="saved-empty">まだ保存されたリダイレクトはありません。</p>';
+    return;
+  }
+
+  savedList.hidden = false;
+  entries
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([id, entry]) => {
+      const item = document.createElement("article");
+      item.className = "saved-item";
+      item.innerHTML = `
+        <p class="saved-item-title">${entry.title}</p>
+        <a class="saved-item-link" href="${buildRedirectUrl(id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(id)}</a>
+        <p class="saved-item-meta">${entry.url}</p>
+      `;
+      savedItems.appendChild(item);
+    });
+}
+
+function setFavicon(iconUrl) {
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
+  }
+  link.href = iconUrl;
+}
+
+function getRequestedId() {
+  const url = new URL(window.location.href);
+  const redirectParam = url.searchParams.get("redirect");
+  if (redirectParam) {
+    return redirectParam;
+  }
+
+  const parts = getPathSegments();
+  if (parts.length === 0) {
+    return "";
+  }
+
+  if (isGitHubPagesProjectSite()) {
+    if (parts.length === 1 || (parts.length === 2 && (parts[1] === "index.html" || parts[1] === "404.html"))) {
+      return "";
+    }
+
+    return decodeURIComponent(parts[parts.length - 1]);
+  }
+
+  const last = parts[parts.length - 1];
+  if (last === "index.html" || last === "404.html") {
+    return "";
+  }
+
+  return decodeURIComponent(last);
+}
+
+function showRedirectView(entry) {
+  builderView.hidden = true;
+  redirectView.hidden = false;
+
+  document.title = entry.title;
+  setFavicon(entry.icon);
+  redirectTitle.textContent = entry.title;
+  redirectDescription.textContent = "移動中です…";
+  redirectLink.textContent = entry.url;
+
+  setTimeout(() => {
+    window.location.replace(entry.url);
+  }, 80);
+}
+
+function showRedirectNotFound(id) {
+  builderView.hidden = true;
+  redirectView.hidden = false;
+  document.title = "Redirect Not Found";
+  redirectTitle.textContent = "リダイレクト設定が見つかりません";
+  redirectDescription.textContent =
+    "このIDは現在のブラウザのローカルストレージに保存されていません。GitHub Pages版では、作成したのと同じブラウザで開く必要があります。";
+  redirectLink.textContent = id ? `ID: ${id}` : "IDが指定されていません。";
+}
+
+function initRedirectMode() {
+  const id = getRequestedId();
+  if (!id) {
+    renderSavedItems();
+    return;
+  }
+
+  const redirects = loadRedirects();
+  const entry = redirects[id];
+
+  if (!entry) {
+    showRedirectNotFound(id);
+    return;
+  }
+
+  showRedirectView(entry);
+}
+
+if (iconInput) {
+  iconInput.addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+
+    if (!file) {
+      iconDataUrl = "";
+      previewWrap.hidden = true;
+      return;
+    }
+
+    try {
+      iconDataUrl = await fileToIconDataUrl(file);
+      previewImage.src = iconDataUrl;
+      previewName.textContent = `${file.name} を ${ICON_SIZE}x${ICON_SIZE} に最適化`;
+      previewWrap.hidden = false;
+      setStatus("");
+    } catch (error) {
+      iconDataUrl = "";
+      previewWrap.hidden = true;
+      setStatus(error.message, true);
+    }
+  });
+}
+
+if (form) {
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!iconDataUrl) {
+      setStatus("アイコン画像を選択してください。", true);
+      return;
+    }
+
+    submitButton.disabled = true;
+    result.hidden = true;
+    setStatus("作成中です...");
+
+    try {
+      const parsedUrl = new URL(urlInput.value);
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("http/https のURLのみ利用できます。");
+      }
+
+      const trimmedTitle = titleInput.value.trim();
+      if (!trimmedTitle) {
+        throw new Error("タイトルを入力してください。");
+      }
+
+      const redirects = loadRedirects();
+      const id = createIdFromUrl(parsedUrl, redirects);
+
+      redirects[id] = {
+        url: parsedUrl.toString(),
+        title: trimmedTitle,
+        icon: iconDataUrl
+      };
+
+      saveRedirects(redirects);
+
+      const redirectUrl = buildRedirectUrl(id);
+      resultLink.href = redirectUrl;
+      resultLink.textContent = redirectUrl;
+      result.hidden = false;
+      setStatus("専用リダイレクトURLを発行しました。");
+      renderSavedItems();
+    } catch (error) {
+      setStatus(error.message || "作成に失敗しました。", true);
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+}
+
+if (copyButton) {
+  copyButton.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(resultLink.textContent);
+      setStatus("URLをコピーしました。");
+    } catch {
+      setStatus("コピーに失敗しました。", true);
+    }
+  });
+}
+
+initRedirectMode();
