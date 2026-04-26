@@ -75,6 +75,69 @@ h1 {
   line-height: 1.6;
 }
 
+.toggle-row {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.toggle-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.toggle-copy strong {
+  font-size: 0.97rem;
+}
+
+.toggle-copy small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-ui {
+  position: relative;
+  width: 56px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(29, 35, 48, 0.18);
+  transition: background 160ms ease;
+}
+
+.toggle-ui::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 8px rgba(18, 28, 45, 0.18);
+  transition: transform 160ms ease;
+}
+
+.toggle-input:checked + .toggle-ui {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+}
+
+.toggle-input:checked + .toggle-ui::after {
+  transform: translateX(22px);
+}
+
 .form,
 .saved-list {
   margin-top: 28px;
@@ -244,6 +307,10 @@ h1 {
 
 .redirect-card {
   text-align: center;
+}
+
+.redirect-button {
+  margin-top: 18px;
 }
 
 @media (max-width: 640px) {
