@@ -1,4 +1,5 @@
 const STORAGE_KEY = "redirect-builder:data";
+const AUTO_REDIRECT_KEY = "redirect-builder:auto-redirect";
 
 const builderView = document.getElementById("builder-view");
 const redirectView = document.getElementById("redirect-view");
@@ -19,6 +20,8 @@ const savedItems = document.getElementById("saved-items");
 const redirectTitle = document.getElementById("redirect-title");
 const redirectDescription = document.getElementById("redirect-description");
 const redirectLink = document.getElementById("redirect-link");
+const autoRedirectToggle = document.getElementById("auto-redirect-toggle");
+const openNowButton = document.getElementById("open-now-button");
 
 const ICON_SIZE = 64;
 let iconDataUrl = "";
@@ -29,6 +32,22 @@ function loadRedirects() {
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
+  }
+}
+
+function loadAutoRedirectEnabled() {
+  try {
+    return localStorage.getItem(AUTO_REDIRECT_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function saveAutoRedirectEnabled(enabled) {
+  try {
+    localStorage.setItem(AUTO_REDIRECT_KEY, enabled ? "true" : "false");
+  } catch {
+    setStatus("即リダイレクト設定の保存に失敗しました。", true);
   }
 }
 
@@ -231,12 +250,20 @@ function showRedirectView(entry) {
   document.title = entry.title;
   setFavicon(entry.icon);
   redirectTitle.textContent = entry.title;
-  redirectDescription.textContent = "移動中です…";
+  redirectDescription.textContent = loadAutoRedirectEnabled()
+    ? "移動中です…"
+    : "即リダイレクトは一時的にOFFです。ホーム画面に追加したあとで開いてください。";
   redirectLink.textContent = entry.url;
+  if (openNowButton) {
+    openNowButton.hidden = loadAutoRedirectEnabled();
+    openNowButton.onclick = () => {
+      window.location.replace(entry.url);
+    };
+  }
 
-  setTimeout(() => {
+  if (loadAutoRedirectEnabled()) {
     window.location.replace(entry.url);
-  }, 80);
+  }
 }
 
 function showRedirectNotFound(id) {
@@ -288,6 +315,18 @@ if (iconInput) {
       previewWrap.hidden = true;
       setStatus(error.message, true);
     }
+  });
+}
+
+if (autoRedirectToggle) {
+  autoRedirectToggle.checked = loadAutoRedirectEnabled();
+  autoRedirectToggle.addEventListener("change", (event) => {
+    saveAutoRedirectEnabled(event.target.checked);
+    setStatus(
+      event.target.checked
+        ? "即リダイレクトをONにしました。"
+        : "即リダイレクトをOFFにしました。ホーム画面追加用にそのまま開けます。"
+    );
   });
 }
 
