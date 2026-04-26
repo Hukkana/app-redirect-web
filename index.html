@@ -5,6 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirect Builder</title>
     <link rel="stylesheet" href="./styles.css">
+    <script>
+      (function () {
+        var STORAGE_KEY = "redirect-builder:data";
+        var AUTO_REDIRECT_KEY = "redirect-builder:auto-redirect";
+        var pathParts = window.location.pathname.split("/").filter(Boolean);
+        var url = new URL(window.location.href);
+        var redirectParam = url.searchParams.get("redirect");
+        var isGitHubPagesProjectSite =
+          window.location.hostname.endsWith(".github.io") && pathParts.length >= 1;
+        var requestedId = "";
+
+        if (redirectParam) {
+          requestedId = redirectParam;
+        } else if (isGitHubPagesProjectSite) {
+          if (pathParts.length >= 2 && pathParts[1] !== "index.html" && pathParts[1] !== "404.html") {
+            requestedId = decodeURIComponent(pathParts[pathParts.length - 1]);
+          }
+        } else if (pathParts.length > 0) {
+          var last = pathParts[pathParts.length - 1];
+          if (last !== "index.html" && last !== "404.html") {
+            requestedId = decodeURIComponent(last);
+          }
+        }
+
+        if (!requestedId) {
+          return;
+        }
+
+        try {
+          var autoRedirect = localStorage.getItem(AUTO_REDIRECT_KEY);
+          if (autoRedirect === "false") {
+            return;
+          }
+
+          var raw = localStorage.getItem(STORAGE_KEY);
+          var redirects = raw ? JSON.parse(raw) : {};
+          var entry = redirects[requestedId];
+
+          if (!entry || !entry.url) {
+            return;
+          }
+
+          document.title = entry.title || "Redirecting...";
+
+          if (entry.icon) {
+            var link = document.createElement("link");
+            link.rel = "icon";
+            link.href = entry.icon;
+            document.head.appendChild(link);
+          }
+
+          window.location.replace(entry.url);
+        } catch (error) {
+          console.error("Early redirect failed:", error);
+        }
+      })();
+    </script>
   </head>
   <body>
     <main class="page">
@@ -18,6 +75,15 @@
         <div class="notice">
           GitHub Pages版では保存先がブラウザのローカルストレージです。同じブラウザで開いたときにリダイレクトできます。
         </div>
+
+        <label class="toggle-row" for="auto-redirect-toggle">
+          <span class="toggle-copy">
+            <strong>即リダイレクト</strong>
+            <small>ホーム画面に追加したいときだけ一時的にOFFにできます。</small>
+          </span>
+          <input id="auto-redirect-toggle" class="toggle-input" type="checkbox" checked>
+          <span class="toggle-ui" aria-hidden="true"></span>
+        </label>
 
         <form id="create-form" class="form">
           <label class="field">
@@ -64,6 +130,7 @@
         <h1 id="redirect-title">移動中です…</h1>
         <p class="lead" id="redirect-description">設定を確認しています。</p>
         <p class="redirect-link" id="redirect-link"></p>
+        <button type="button" class="button squircle redirect-button" id="open-now-button" hidden>いま開く</button>
       </section>
     </main>
 
