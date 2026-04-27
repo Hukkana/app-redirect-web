@@ -158,7 +158,9 @@ h1 {
 
 .input,
 .button,
-.copy-button {
+.copy-button,
+.secondary-button,
+.saved-action {
   width: 100%;
   border: 1px solid var(--line);
   font: inherit;
@@ -186,7 +188,9 @@ h1 {
 }
 
 .button,
-.copy-button {
+.copy-button,
+.secondary-button,
+.saved-action {
   cursor: pointer;
   font-weight: 700;
   transition: transform 160ms ease, background 160ms ease, opacity 160ms ease;
@@ -269,6 +273,13 @@ h1 {
   background: rgba(255, 255, 255, 0.88);
 }
 
+.secondary-button,
+.saved-action {
+  padding: 14px 18px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+}
+
 .saved-items {
   display: grid;
   gap: 10px;
@@ -293,6 +304,17 @@ h1 {
   color: var(--muted);
   font-size: 0.94rem;
   word-break: break-all;
+}
+
+.saved-item-actions,
+.form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.saved-action.delete {
+  color: var(--danger);
 }
 
 .status {
@@ -320,6 +342,11 @@ h1 {
   }
 
   .result-box {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-item-actions,
+  .form-actions {
     grid-template-columns: 1fr;
   }
 }
