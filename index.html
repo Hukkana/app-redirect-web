@@ -118,14 +118,15 @@
         </label>
 
         <form id="create-form" class="form">
+          <input id="editing-id" name="editingId" type="hidden">
           <label class="field">
             <span>リダイレクト先URL</span>
-            <input class="input squircle" id="url" name="url" type="url" placeholder="https://kahoot.it" inputmode="url" required>
+            <input class="input squircle" id="url" name="url" type="url" placeholder="https://example.com" inputmode="url" required>
           </label>
 
           <label class="field">
             <span>タイトル</span>
-            <input class="input squircle" id="title" name="title" type="text" placeholder="Kahoot" maxlength="80" required>
+            <input class="input squircle" id="title" name="title" type="text" placeholder="Example" maxlength="80" required>
           </label>
 
           <label class="field">
@@ -138,7 +139,10 @@
             <p id="preview-name" class="preview-name"></p>
           </div>
 
-          <button type="submit" class="button squircle" id="submit-button">作成</button>
+          <div class="form-actions">
+            <button type="submit" class="button squircle" id="submit-button">作成</button>
+            <button type="button" class="secondary-button squircle" id="cancel-edit-button" hidden>編集をやめる</button>
+          </div>
         </form>
 
         <section id="result" class="result" hidden>
