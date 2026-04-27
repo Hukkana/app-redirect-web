@@ -4,10 +4,12 @@ const AUTO_REDIRECT_KEY = "redirect-builder:auto-redirect";
 const builderView = document.getElementById("builder-view");
 const redirectView = document.getElementById("redirect-view");
 const form = document.getElementById("create-form");
+const editingIdInput = document.getElementById("editing-id");
 const urlInput = document.getElementById("url");
 const titleInput = document.getElementById("title");
 const iconInput = document.getElementById("icon");
 const submitButton = document.getElementById("submit-button");
+const cancelEditButton = document.getElementById("cancel-edit-button");
 const result = document.getElementById("result");
 const resultLink = document.getElementById("result-link");
 const copyButton = document.getElementById("copy-button");
@@ -25,6 +27,7 @@ const openNowButton = document.getElementById("open-now-button");
 
 const ICON_SIZE = 180;
 let iconDataUrl = "";
+let editingOriginalIcon = "";
 
 function loadRedirects() {
   try {
@@ -61,6 +64,17 @@ function saveRedirects(data) {
 
     throw new Error("ブラウザへの保存に失敗しました。");
   }
+}
+
+function resetFormState() {
+  form.reset();
+  editingIdInput.value = "";
+  iconDataUrl = "";
+  editingOriginalIcon = "";
+  submitButton.textContent = "作成";
+  cancelEditButton.hidden = true;
+  previewWrap.hidden = true;
+  result.hidden = true;
 }
 
 function setStatus(message, isError = false) {
@@ -200,6 +214,10 @@ function renderSavedItems() {
         <p class="saved-item-title">${entry.title}</p>
         <a class="saved-item-link" href="${buildRedirectUrl(id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(id)}</a>
         <p class="saved-item-meta">${entry.url}</p>
+        <div class="saved-item-actions">
+          <button type="button" class="saved-action edit" data-action="edit" data-id="${id}">編集</button>
+          <button type="button" class="saved-action delete" data-action="delete" data-id="${id}">削除</button>
+        </div>
       `;
       savedItems.appendChild(item);
     });
@@ -306,6 +324,47 @@ function showRedirectNotFound(id) {
   redirectLink.textContent = id ? `ID: ${id}` : "IDが指定されていません。";
 }
 
+function startEditing(id) {
+  const redirects = loadRedirects();
+  const entry = redirects[id];
+  if (!entry) {
+    setStatus("編集対象が見つかりません。", true);
+    return;
+  }
+
+  editingIdInput.value = id;
+  urlInput.value = entry.url;
+  titleInput.value = entry.title;
+  iconDataUrl = entry.icon;
+  editingOriginalIcon = entry.icon;
+  previewImage.src = entry.icon;
+  previewName.textContent = "現在のアイコン";
+  previewWrap.hidden = false;
+  submitButton.textContent = "保存";
+  cancelEditButton.hidden = false;
+  result.hidden = true;
+  setStatus(`"${id}" を編集中です。`);
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function deleteRedirect(id) {
+  const redirects = loadRedirects();
+  if (!redirects[id]) {
+    setStatus("削除対象が見つかりません。", true);
+    return;
+  }
+
+  delete redirects[id];
+  saveRedirects(redirects);
+
+  if (editingIdInput.value === id) {
+    resetFormState();
+  }
+
+  renderSavedItems();
+  setStatus(`"${id}" を削除しました。`);
+}
+
 function initRedirectMode() {
   const id = getRequestedId();
   if (!id) {
@@ -348,6 +407,32 @@ if (iconInput) {
   });
 }
 
+if (cancelEditButton) {
+  cancelEditButton.addEventListener("click", () => {
+    resetFormState();
+    setStatus("編集をやめました。");
+  });
+}
+
+if (savedItems) {
+  savedItems.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action]");
+    if (!button) {
+      return;
+    }
+
+    const { action, id } = button.dataset;
+    if (action === "edit") {
+      startEditing(id);
+      return;
+    }
+
+    if (action === "delete") {
+      deleteRedirect(id);
+    }
+  });
+}
+
 if (autoRedirectToggle) {
   autoRedirectToggle.checked = loadAutoRedirectEnabled();
   autoRedirectToggle.addEventListener("change", (event) => {
@@ -385,12 +470,18 @@ if (form) {
       }
 
       const redirects = loadRedirects();
-      const id = createIdFromUrl(parsedUrl, redirects);
+      const editingId = editingIdInput.value;
+      const id = editingId || createIdFromUrl(parsedUrl, redirects);
+      const finalIcon = iconDataUrl || editingOriginalIcon;
+
+      if (!finalIcon) {
+        throw new Error("アイコン画像を選択してください。");
+      }
 
       redirects[id] = {
         url: parsedUrl.toString(),
         title: trimmedTitle,
-        icon: iconDataUrl
+        icon: finalIcon
       };
 
       saveRedirects(redirects);
@@ -399,7 +490,11 @@ if (form) {
       resultLink.href = redirectUrl;
       resultLink.textContent = redirectUrl;
       result.hidden = false;
-      setStatus("専用リダイレクトURLを発行しました。");
+      setStatus(editingId ? "リダイレクト設定を更新しました。" : "専用リダイレクトURLを発行しました。");
+      resetFormState();
+      result.hidden = false;
+      resultLink.href = redirectUrl;
+      resultLink.textContent = redirectUrl;
       renderSavedItems();
     } catch (error) {
       setStatus(error.message || "作成に失敗しました。", true);
