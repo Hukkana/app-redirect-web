@@ -23,7 +23,7 @@ const redirectLink = document.getElementById("redirect-link");
 const autoRedirectToggle = document.getElementById("auto-redirect-toggle");
 const openNowButton = document.getElementById("open-now-button");
 
-const ICON_SIZE = 64;
+const ICON_SIZE = 180;
 let iconDataUrl = "";
 
 function loadRedirects() {
@@ -205,14 +205,45 @@ function renderSavedItems() {
     });
 }
 
-function setFavicon(iconUrl) {
-  let link = document.querySelector('link[rel="icon"]');
-  if (!link) {
-    link = document.createElement("link");
-    link.rel = "icon";
-    document.head.appendChild(link);
+function setMeta(name, content) {
+  let element = document.querySelector(`meta[name="${name}"]`);
+  if (!element) {
+    element = document.createElement("meta");
+    element.name = name;
+    document.head.appendChild(element);
   }
-  link.href = iconUrl;
+  element.content = content;
+}
+
+function setLink(rel, href, sizes = "") {
+  const selector = sizes ? `link[rel="${rel}"][sizes="${sizes}"]` : `link[rel="${rel}"]`;
+  let element = document.querySelector(selector);
+
+  if (!element) {
+    element = document.createElement("link");
+    element.rel = rel;
+    if (sizes) {
+      element.sizes = sizes;
+    }
+    document.head.appendChild(element);
+  }
+
+  element.href = href;
+}
+
+function applyWebAppMetadata(entry) {
+  document.title = entry.title;
+  setMeta("apple-mobile-web-app-title", entry.title);
+  setMeta("apple-mobile-web-app-capable", "yes");
+  setMeta("apple-mobile-web-app-status-bar-style", "default");
+
+  if (entry.icon) {
+    setLink("icon", entry.icon);
+    setLink("apple-touch-icon", entry.icon);
+    setLink("apple-touch-icon", entry.icon, `${ICON_SIZE}x${ICON_SIZE}`);
+    setLink("apple-touch-icon-precomposed", entry.icon);
+    setLink("apple-touch-icon-precomposed", entry.icon, `${ICON_SIZE}x${ICON_SIZE}`);
+  }
 }
 
 function getRequestedId() {
@@ -247,8 +278,7 @@ function showRedirectView(entry) {
   builderView.hidden = true;
   redirectView.hidden = false;
 
-  document.title = entry.title;
-  setFavicon(entry.icon);
+  applyWebAppMetadata(entry);
   redirectTitle.textContent = entry.title;
   redirectDescription.textContent = loadAutoRedirectEnabled()
     ? "移動中です…"
