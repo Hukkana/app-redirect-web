@@ -1,5 +1,9 @@
-const STORAGE_KEY = "redirect-builder:data";
+const APP_CONFIG = window.APP_CONFIG || {};
+const SUPABASE_URL = APP_CONFIG.supabaseUrl || "";
+const SUPABASE_ANON_KEY = APP_CONFIG.supabaseAnonKey || "";
+const SUPABASE_BUCKET = APP_CONFIG.supabaseBucket || "redirect-icons";
 const AUTO_REDIRECT_KEY = "redirect-builder:auto-redirect";
+const DEVICE_KEY = "redirect-builder:device-id";
 
 const builderView = document.getElementById("builder-view");
 const redirectView = document.getElementById("redirect-view");
@@ -8,6 +12,9 @@ const editingIdInput = document.getElementById("editing-id");
 const urlInput = document.getElementById("url");
 const titleInput = document.getElementById("title");
 const iconInput = document.getElementById("icon");
+const iconSizeInput = document.getElementById("icon-size");
+const iconPositionXInput = document.getElementById("icon-position-x");
+const iconPositionYInput = document.getElementById("icon-position-y");
 const submitButton = document.getElementById("submit-button");
 const cancelEditButton = document.getElementById("cancel-edit-button");
 const result = document.getElementById("result");
@@ -17,25 +24,55 @@ const status = document.getElementById("status");
 const previewWrap = document.getElementById("preview-wrap");
 const previewImage = document.getElementById("preview-image");
 const previewName = document.getElementById("preview-name");
-const savedList = document.getElementById("saved-list");
-const savedItems = document.getElementById("saved-items");
+const myList = document.getElementById("my-list");
+const myItems = document.getElementById("my-items");
+const allList = document.getElementById("all-list");
+const allItems = document.getElementById("all-items");
 const redirectTitle = document.getElementById("redirect-title");
 const redirectDescription = document.getElementById("redirect-description");
 const redirectLink = document.getElementById("redirect-link");
 const autoRedirectToggle = document.getElementById("auto-redirect-toggle");
 const openNowButton = document.getElementById("open-now-button");
+const deleteModal = document.getElementById("delete-modal");
+const deleteModalText = document.getElementById("delete-modal-text");
+const deleteCancelButton = document.getElementById("delete-cancel-button");
+const deleteConfirmButton = document.getElementById("delete-confirm-button");
 
-const ICON_SIZE = 180;
+const DEFAULT_ICON_SIZE = 180;
+const CACHE_PREFIX = "redirect-builder:cache:";
+
+const supabaseClient =
+  SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
+      })
+    : null;
+
 let iconDataUrl = "";
-let editingOriginalIcon = "";
+let iconBlob = null;
+let selectedIconFile = null;
+let editingOriginalIconUrl = "";
+let editingOriginalIconPath = "";
+let editingOriginalCreatorKey = "";
+let editingOriginalNetworkKey = "";
+let pendingDeleteId = "";
+let identityPromise = null;
 
-function loadRedirects() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+function isSupabaseReady() {
+  return Boolean(supabaseClient);
+}
+
+function setStatus(message, isError = false) {
+  if (!status) {
+    return;
   }
+
+  status.textContent = message;
+  status.classList.toggle("error", isError);
 }
 
 function loadAutoRedirectEnabled() {
@@ -54,15 +91,74 @@ function saveAutoRedirectEnabled(enabled) {
   }
 }
 
-function saveRedirects(data) {
+function createRandomId() {
+  if (window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return `device-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getDeviceKey() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (error) {
-    if (error && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED")) {
-      throw new Error("保存容量を超えました。画像を小さくして再作成してください。");
+    let deviceKey = localStorage.getItem(DEVICE_KEY);
+    if (!deviceKey) {
+      deviceKey = createRandomId();
+      localStorage.setItem(DEVICE_KEY, deviceKey);
+    }
+    return deviceKey;
+  } catch {
+    return "device-unavailable";
+  }
+}
+
+async function sha256(value) {
+  const bytes = new TextEncoder().encode(value);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function getNetworkKey() {
+  try {
+    const response = await fetch("https://api.ipify.org?format=json", {
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      return "";
     }
 
-    throw new Error("ブラウザへの保存に失敗しました。");
+    const data = await response.json();
+    return data.ip ? await sha256(data.ip) : "";
+  } catch {
+    return "";
+  }
+}
+
+function getIdentity() {
+  if (!identityPromise) {
+    identityPromise = Promise.all([Promise.resolve(getDeviceKey()), getNetworkKey()]).then(
+      ([deviceKey, networkKey]) => ({ deviceKey, networkKey })
+    );
+  }
+
+  return identityPromise;
+}
+
+function cacheRedirect(entry) {
+  try {
+    localStorage.setItem(`${CACHE_PREFIX}${entry.id}`, JSON.stringify(entry));
+  } catch {
+    // ignore cache failures
+  }
+}
+
+function clearRedirectCache(id) {
+  try {
+    localStorage.removeItem(`${CACHE_PREFIX}${id}`);
+  } catch {
+    // ignore cache failures
   }
 }
 
@@ -70,20 +166,15 @@ function resetFormState() {
   form.reset();
   editingIdInput.value = "";
   iconDataUrl = "";
-  editingOriginalIcon = "";
+  iconBlob = null;
+  selectedIconFile = null;
+  editingOriginalIconUrl = "";
+  editingOriginalIconPath = "";
+  editingOriginalCreatorKey = "";
+  editingOriginalNetworkKey = "";
   submitButton.textContent = "作成";
   cancelEditButton.hidden = true;
   previewWrap.hidden = true;
-  result.hidden = true;
-}
-
-function setStatus(message, isError = false) {
-  if (!status) {
-    return;
-  }
-
-  status.textContent = message;
-  status.classList.toggle("error", isError);
 }
 
 function fileToDataUrl(file) {
@@ -104,7 +195,10 @@ function loadImage(source) {
   });
 }
 
-async function fileToIconDataUrl(file) {
+async function fileToIconAssets(file) {
+  const size = getIconSize();
+  const positionX = getRangeValue(iconPositionXInput, 50) / 100;
+  const positionY = getRangeValue(iconPositionYInput, 50) / 100;
   const source = await fileToDataUrl(file);
   const image = await loadImage(source);
   const canvas = document.createElement("canvas");
@@ -114,19 +208,63 @@ async function fileToIconDataUrl(file) {
     throw new Error("画像処理の初期化に失敗しました。");
   }
 
-  canvas.width = ICON_SIZE;
-  canvas.height = ICON_SIZE;
+  canvas.width = size;
+  canvas.height = size;
 
-  const scale = Math.max(ICON_SIZE / image.width, ICON_SIZE / image.height);
+  const scale = Math.max(size / image.width, size / image.height);
   const drawWidth = image.width * scale;
   const drawHeight = image.height * scale;
-  const offsetX = (ICON_SIZE - drawWidth) / 2;
-  const offsetY = (ICON_SIZE - drawHeight) / 2;
+  const overflowX = Math.max(0, drawWidth - size);
+  const overflowY = Math.max(0, drawHeight - size);
+  const offsetX = -overflowX * positionX;
+  const offsetY = -overflowY * positionY;
 
-  context.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
+  context.clearRect(0, 0, size, size);
   context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 
-  return canvas.toDataURL("image/png");
+  const dataUrl = canvas.toDataURL("image/png");
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((createdBlob) => {
+      if (!createdBlob) {
+        reject(new Error("アイコンの生成に失敗しました。"));
+        return;
+      }
+      resolve(createdBlob);
+    }, "image/png");
+  });
+
+  return { dataUrl, blob };
+}
+
+function getIconSize() {
+  const parsed = Number.parseInt(iconSizeInput.value, 10);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_ICON_SIZE;
+  }
+
+  return Math.min(1024, Math.max(64, parsed));
+}
+
+function getRangeValue(input, fallback) {
+  const parsed = Number.parseInt(input.value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(100, Math.max(0, parsed));
+}
+
+async function regenerateSelectedIcon() {
+  if (!selectedIconFile) {
+    return;
+  }
+
+  const iconAssets = await fileToIconAssets(selectedIconFile);
+  iconDataUrl = iconAssets.dataUrl;
+  iconBlob = iconAssets.blob;
+  previewImage.src = iconDataUrl;
+  previewName.textContent = `${selectedIconFile.name} を ${getIconSize()}x${getIconSize()} に調整`;
+  previewWrap.hidden = false;
 }
 
 function normalizeDomainPart(value) {
@@ -137,7 +275,7 @@ function normalizeDomainPart(value) {
     .replace(/^-|-$/g, "");
 }
 
-function createIdFromUrl(targetUrl, redirects) {
+function createIdFromUrl(targetUrl, redirectsById) {
   const hostname = targetUrl.hostname.replace(/^www\./, "");
   const parts = hostname.split(".").filter(Boolean);
   const domainBase = parts.length >= 2 ? parts[parts.length - 2] : parts[0] || "link";
@@ -145,7 +283,7 @@ function createIdFromUrl(targetUrl, redirects) {
   let candidate = baseId;
   let suffix = 2;
 
-  while (redirects[candidate]) {
+  while (redirectsById[candidate]) {
     candidate = `${baseId}-${suffix}`;
     suffix += 1;
   }
@@ -188,41 +326,6 @@ function buildRedirectUrl(id) {
   return `${origin}${basePath}/${encodeURIComponent(id)}`;
 }
 
-function renderSavedItems() {
-  if (!savedList || !savedItems) {
-    return;
-  }
-
-  const redirects = loadRedirects();
-  const entries = Object.entries(redirects);
-
-  savedItems.innerHTML = "";
-
-  if (entries.length === 0) {
-    savedList.hidden = false;
-    savedItems.innerHTML = '<p class="saved-empty">まだ保存されたリダイレクトはありません。</p>';
-    return;
-  }
-
-  savedList.hidden = false;
-  entries
-    .sort(([a], [b]) => a.localeCompare(b))
-    .forEach(([id, entry]) => {
-      const item = document.createElement("article");
-      item.className = "saved-item";
-      item.innerHTML = `
-        <p class="saved-item-title">${entry.title}</p>
-        <a class="saved-item-link" href="${buildRedirectUrl(id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(id)}</a>
-        <p class="saved-item-meta">${entry.url}</p>
-        <div class="saved-item-actions">
-          <button type="button" class="saved-action edit" data-action="edit" data-id="${id}">編集</button>
-          <button type="button" class="saved-action delete" data-action="delete" data-id="${id}">削除</button>
-        </div>
-      `;
-      savedItems.appendChild(item);
-    });
-}
-
 function setMeta(name, content) {
   let element = document.querySelector(`meta[name="${name}"]`);
   if (!element) {
@@ -255,12 +358,10 @@ function applyWebAppMetadata(entry) {
   setMeta("apple-mobile-web-app-capable", "yes");
   setMeta("apple-mobile-web-app-status-bar-style", "default");
 
-  if (entry.icon) {
-    setLink("icon", entry.icon);
-    setLink("apple-touch-icon", entry.icon);
-    setLink("apple-touch-icon", entry.icon, `${ICON_SIZE}x${ICON_SIZE}`);
-    setLink("apple-touch-icon-precomposed", entry.icon);
-    setLink("apple-touch-icon-precomposed", entry.icon, `${ICON_SIZE}x${ICON_SIZE}`);
+  if (entry.icon_url) {
+    setLink("icon", entry.icon_url);
+    setLink("apple-touch-icon", entry.icon_url);
+    setLink("apple-touch-icon-precomposed", entry.icon_url);
   }
 }
 
@@ -292,6 +393,135 @@ function getRequestedId() {
   return decodeURIComponent(last);
 }
 
+function buildRedirectMap(entries) {
+  return Object.fromEntries(entries.map((entry) => [entry.id, entry]));
+}
+
+async function listRedirects() {
+  const { data, error } = await supabaseClient
+    .from("redirects")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key")
+    .order("id", { ascending: true });
+
+  if (error) {
+    throw new Error(`リダイレクト一覧の取得に失敗しました: ${error.message}`);
+  }
+
+  const entries = data || [];
+  entries.forEach(cacheRedirect);
+  return entries;
+}
+
+async function getRedirectById(id) {
+  const { data, error } = await supabaseClient
+    .from("redirects")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`リダイレクト設定の取得に失敗しました: ${error.message}`);
+  }
+
+  if (data) {
+    cacheRedirect(data);
+  }
+
+  return data;
+}
+
+async function uploadIcon(id, blob) {
+  const path = `${id}/${Date.now()}.png`;
+  const { error: uploadError } = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, blob, {
+    cacheControl: "3600",
+    contentType: "image/png",
+    upsert: false
+  });
+
+  if (uploadError) {
+    throw new Error(`アイコンのアップロードに失敗しました: ${uploadError.message}`);
+  }
+
+  const { data } = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path);
+  return { iconPath: path, iconUrl: data.publicUrl };
+}
+
+async function removeIcon(path) {
+  if (!path) {
+    return;
+  }
+
+  const { error } = await supabaseClient.storage.from(SUPABASE_BUCKET).remove([path]);
+  if (error) {
+    console.error("Failed to remove old icon:", error.message);
+  }
+}
+
+async function saveRedirect(entry, originalIconPath = "") {
+  const { error } = await supabaseClient.from("redirects").upsert(entry, {
+    onConflict: "id"
+  });
+
+  if (error) {
+    if (entry.icon_path && entry.icon_path !== originalIconPath) {
+      await removeIcon(entry.icon_path);
+    }
+    throw new Error(`リダイレクト設定の保存に失敗しました: ${error.message}`);
+  }
+
+  cacheRedirect(entry);
+}
+
+async function deleteRedirectRemote(id, iconPath) {
+  const { error } = await supabaseClient.from("redirects").delete().eq("id", id);
+  if (error) {
+    throw new Error(`削除に失敗しました: ${error.message}`);
+  }
+
+  await removeIcon(iconPath);
+  clearRedirectCache(id);
+}
+
+function canShowInMyList(entry, identity) {
+  return (
+    entry.creator_key === identity.deviceKey ||
+    Boolean(identity.networkKey && entry.network_key === identity.networkKey)
+  );
+}
+
+function renderRedirectItems(container, list, entries, showActions) {
+  if (!list || !container) {
+    return;
+  }
+
+  container.innerHTML = "";
+  list.hidden = false;
+
+  if (entries.length === 0) {
+    container.innerHTML = '<p class="saved-empty">まだ保存されたリダイレクトはありません。</p>';
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const item = document.createElement("article");
+    item.className = "saved-item";
+    item.innerHTML = `
+      <p class="saved-item-title">${entry.title}</p>
+      <a class="saved-item-link" href="${buildRedirectUrl(entry.id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(entry.id)}</a>
+      <p class="saved-item-meta">${entry.url}</p>
+      ${
+        showActions
+          ? `<div class="saved-item-actions">
+              <button type="button" class="saved-action edit" data-action="edit" data-id="${entry.id}">編集</button>
+              <button type="button" class="saved-action delete" data-action="delete" data-id="${entry.id}">削除</button>
+            </div>`
+          : ""
+      }
+    `;
+    container.appendChild(item);
+  });
+}
+
 function showRedirectView(entry) {
   builderView.hidden = true;
   redirectView.hidden = false;
@@ -302,6 +532,7 @@ function showRedirectView(entry) {
     ? "移動中です…"
     : "即リダイレクトは一時的にOFFです。ホーム画面に追加したあとで開いてください。";
   redirectLink.textContent = entry.url;
+
   if (openNowButton) {
     openNowButton.hidden = loadAutoRedirectEnabled();
     openNowButton.onclick = () => {
@@ -319,68 +550,113 @@ function showRedirectNotFound(id) {
   redirectView.hidden = false;
   document.title = "Redirect Not Found";
   redirectTitle.textContent = "リダイレクト設定が見つかりません";
-  redirectDescription.textContent =
-    "このIDは現在のブラウザのローカルストレージに保存されていません。GitHub Pages版では、作成したのと同じブラウザで開く必要があります。";
+  redirectDescription.textContent = "Supabase 上にこのIDの設定が見つかりませんでした。";
   redirectLink.textContent = id ? `ID: ${id}` : "IDが指定されていません。";
 }
 
-function startEditing(id) {
-  const redirects = loadRedirects();
-  const entry = redirects[id];
-  if (!entry) {
-    setStatus("編集対象が見つかりません。", true);
-    return;
-  }
-
-  editingIdInput.value = id;
+function startEditing(entry) {
+  editingIdInput.value = entry.id;
   urlInput.value = entry.url;
   titleInput.value = entry.title;
-  iconDataUrl = entry.icon;
-  editingOriginalIcon = entry.icon;
-  previewImage.src = entry.icon;
+  iconDataUrl = entry.icon_url || "";
+  iconBlob = null;
+  editingOriginalIconUrl = entry.icon_url || "";
+  editingOriginalIconPath = entry.icon_path || "";
+  editingOriginalCreatorKey = entry.creator_key || "";
+  editingOriginalNetworkKey = entry.network_key || "";
+  previewImage.src = entry.icon_url || "";
   previewName.textContent = "現在のアイコン";
-  previewWrap.hidden = false;
+  previewWrap.hidden = !entry.icon_url;
   submitButton.textContent = "保存";
   cancelEditButton.hidden = false;
   result.hidden = true;
-  setStatus(`"${id}" を編集中です。`);
+  setStatus(`"${entry.id}" を編集中です。`);
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function deleteRedirect(id) {
-  const redirects = loadRedirects();
-  if (!redirects[id]) {
+async function deleteRedirect(id) {
+  const entry = await getRedirectById(id);
+  if (!entry) {
     setStatus("削除対象が見つかりません。", true);
     return;
   }
 
-  delete redirects[id];
-  saveRedirects(redirects);
+  await deleteRedirectRemote(id, entry.icon_path);
 
   if (editingIdInput.value === id) {
     resetFormState();
   }
 
-  renderSavedItems();
+  await refreshSavedItems();
   setStatus(`"${id}" を削除しました。`);
 }
 
-function initRedirectMode() {
+async function refreshSavedItems() {
+  const entries = await listRedirects();
+  const identity = await getIdentity();
+  const myEntries = entries.filter((entry) => canShowInMyList(entry, identity));
+  renderRedirectItems(myItems, myList, myEntries, true);
+  renderRedirectItems(allItems, allList, entries, false);
+  return entries;
+}
+
+async function openDeleteModal(id) {
+  try {
+    const entry = await getRedirectById(id);
+    if (!entry) {
+      setStatus("削除対象が見つかりません。", true);
+      return;
+    }
+
+    pendingDeleteId = id;
+    deleteModalText.textContent = `${id} を削除します。転送先: ${entry.url}`;
+    deleteModal.hidden = false;
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+function closeDeleteModal() {
+  pendingDeleteId = "";
+  deleteModal.hidden = true;
+}
+
+function showSetupMessage() {
+  setStatus("Supabase の設定が未入力です。config.js に URL と anon key を設定してください。", true);
+}
+
+async function initRedirectMode() {
   const id = getRequestedId();
   if (!id) {
-    renderSavedItems();
+    if (isSupabaseReady()) {
+      try {
+        await refreshSavedItems();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    } else {
+      showSetupMessage();
+    }
     return;
   }
 
-  const redirects = loadRedirects();
-  const entry = redirects[id];
-
-  if (!entry) {
+  if (!isSupabaseReady()) {
     showRedirectNotFound(id);
     return;
   }
 
-  showRedirectView(entry);
+  try {
+    const entry = await getRedirectById(id);
+    if (!entry) {
+      showRedirectNotFound(id);
+      return;
+    }
+
+    showRedirectView(entry);
+  } catch (error) {
+    setStatus(error.message, true);
+    showRedirectNotFound(id);
+  }
 }
 
 if (iconInput) {
@@ -389,23 +665,40 @@ if (iconInput) {
 
     if (!file) {
       iconDataUrl = "";
+      iconBlob = null;
+      selectedIconFile = null;
       previewWrap.hidden = true;
       return;
     }
 
     try {
-      iconDataUrl = await fileToIconDataUrl(file);
-      previewImage.src = iconDataUrl;
-      previewName.textContent = `${file.name} を ${ICON_SIZE}x${ICON_SIZE} に最適化`;
-      previewWrap.hidden = false;
+      selectedIconFile = file;
+      await regenerateSelectedIcon();
       setStatus("");
     } catch (error) {
       iconDataUrl = "";
+      iconBlob = null;
+      selectedIconFile = null;
       previewWrap.hidden = true;
       setStatus(error.message, true);
     }
   });
 }
+
+[iconSizeInput, iconPositionXInput, iconPositionYInput].forEach((input) => {
+  if (!input) {
+    return;
+  }
+
+  input.addEventListener("input", async () => {
+    try {
+      await regenerateSelectedIcon();
+      setStatus("");
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  });
+});
 
 if (cancelEditButton) {
   cancelEditButton.addEventListener("click", () => {
@@ -414,24 +707,68 @@ if (cancelEditButton) {
   });
 }
 
-if (savedItems) {
-  savedItems.addEventListener("click", (event) => {
+if (myItems) {
+  myItems.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-action]");
     if (!button) {
       return;
     }
 
     const { action, id } = button.dataset;
+
     if (action === "edit") {
-      startEditing(id);
+      try {
+        const entry = await getRedirectById(id);
+        if (!entry) {
+          setStatus("編集対象が見つかりません。", true);
+          return;
+        }
+        startEditing(entry);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
       return;
     }
 
     if (action === "delete") {
-      deleteRedirect(id);
+      await openDeleteModal(id);
     }
   });
 }
+
+if (deleteCancelButton) {
+  deleteCancelButton.addEventListener("click", closeDeleteModal);
+}
+
+if (deleteConfirmButton) {
+  deleteConfirmButton.addEventListener("click", async () => {
+    if (!pendingDeleteId) {
+      closeDeleteModal();
+      return;
+    }
+
+    try {
+      await deleteRedirect(pendingDeleteId);
+      closeDeleteModal();
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  });
+}
+
+if (deleteModal) {
+  deleteModal.addEventListener("click", (event) => {
+    if (event.target === deleteModal) {
+      closeDeleteModal();
+    }
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && deleteModal && !deleteModal.hidden) {
+    closeDeleteModal();
+  }
+});
 
 if (autoRedirectToggle) {
   autoRedirectToggle.checked = loadAutoRedirectEnabled();
@@ -449,14 +786,14 @@ if (form) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (!iconDataUrl) {
-      setStatus("アイコン画像を選択してください。", true);
+    if (!isSupabaseReady()) {
+      showSetupMessage();
       return;
     }
 
     submitButton.disabled = true;
     result.hidden = true;
-    setStatus("作成中です...");
+    setStatus("保存中です...");
 
     try {
       const parsedUrl = new URL(urlInput.value);
@@ -469,35 +806,50 @@ if (form) {
         throw new Error("タイトルを入力してください。");
       }
 
-      const redirects = loadRedirects();
       const editingId = editingIdInput.value;
-      const id = editingId || createIdFromUrl(parsedUrl, redirects);
-      const finalIcon = iconDataUrl || editingOriginalIcon;
+      const entries = await listRedirects();
+      const redirectsById = buildRedirectMap(entries);
+      const id = editingId || createIdFromUrl(parsedUrl, redirectsById);
+      const identity = await getIdentity();
 
-      if (!finalIcon) {
+      let finalIconUrl = editingOriginalIconUrl;
+      let finalIconPath = editingOriginalIconPath;
+
+      if (iconBlob) {
+        const uploaded = await uploadIcon(id, iconBlob);
+        finalIconUrl = uploaded.iconUrl;
+        finalIconPath = uploaded.iconPath;
+      }
+
+      if (!finalIconUrl) {
         throw new Error("アイコン画像を選択してください。");
       }
 
-      redirects[id] = {
+      const entry = {
+        id,
         url: parsedUrl.toString(),
         title: trimmedTitle,
-        icon: finalIcon
+        icon_url: finalIconUrl,
+        icon_path: finalIconPath,
+        creator_key: editingOriginalCreatorKey || identity.deviceKey,
+        network_key: editingOriginalNetworkKey || identity.networkKey
       };
 
-      saveRedirects(redirects);
+      await saveRedirect(entry, editingOriginalIconPath);
+
+      if (editingOriginalIconPath && editingOriginalIconPath !== finalIconPath) {
+        await removeIcon(editingOriginalIconPath);
+      }
 
       const redirectUrl = buildRedirectUrl(id);
-      resultLink.href = redirectUrl;
-      resultLink.textContent = redirectUrl;
-      result.hidden = false;
-      setStatus(editingId ? "リダイレクト設定を更新しました。" : "専用リダイレクトURLを発行しました。");
       resetFormState();
       result.hidden = false;
       resultLink.href = redirectUrl;
       resultLink.textContent = redirectUrl;
-      renderSavedItems();
+      await refreshSavedItems();
+      setStatus(editingId ? "リダイレクト設定を更新しました。" : "専用リダイレクトURLを発行しました。");
     } catch (error) {
-      setStatus(error.message || "作成に失敗しました。", true);
+      setStatus(error.message || "保存に失敗しました。", true);
     } finally {
       submitButton.disabled = false;
     }
