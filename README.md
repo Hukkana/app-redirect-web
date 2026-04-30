@@ -1,4 +1,4 @@
-# app-redirect-web
+# myIcon-set
 
 私の天才的なアイデアで、「URLごとにタイトルとアイコン付きのリダイレクトページを作成できる」というシンプルなWebサービス。
 
@@ -6,12 +6,13 @@
 
 このアプリでは、URL・タイトル・アイコン画像を入力すると、専用のリダイレクトURLを作れます。
 
-例えば `https://kahoot.it` を登録すると、`/kahoot` のようなURLを発行し、そのURLにアクセスしたときに自動で `kahoot.it` へ移動します。
+例えば `https://example.com` を登録すると、`/example` のようなURLを発行し、そのURLにアクセスしたときに自動で `example.com` へ移動します。
 
 リダイレクト時には次の情報も反映されます。
 
 - ページタイトル
 - favicon
+- apple-touch-icon
 
 ## できること
 
@@ -19,11 +20,13 @@
 - ドメイン名ベースの `id` を自動生成
 - `/:id` 形式のURLを発行
 - アクセス時に即リダイレクト
+- `みんなのリダイレクト` に全員のリダイレクトを表示
+- `わたしのリダイレクト` に自分または同じネットワークのリダイレクトを表示
 - スマホでも使えるシンプルなUI
 
 ## GitHub Pages 版について
 
-このリポジトリには、GitHub Pages で公開しやすい静的版が入っています。
+このリポジトリは GitHub Pages で公開し、保存先は Supabase を使う構成です。
 
 主に使うファイルは以下です。
 
@@ -32,8 +35,9 @@
 - `app.js`
 - `404.html`
 - `.nojekyll`
+- `config.js`
 
-`404.html` を使って `/kahoot` のようなパスアクセスを受け取り、実際のリダイレクト処理につなげています。
+`404.html` を使って `/example` のようなパスアクセスを受け取り、実際のリダイレクト処理につなげています。
 
 ## 公開後のURL例
 
@@ -43,7 +47,97 @@ GitHub Pages で公開すると、URLはだいたい次のようになります�
   `https://<GitHubユーザー名>.github.io/<リポジトリ名>/`
 
 - リダイレクトページ  
-  `https://<GitHubユーザー名>.github.io/<リポジトリ名>/kahoot`
+  `https://<GitHubユーザー名>.github.io/<リポジトリ名>/example`
+
+## Supabase セットアップ
+
+1. Supabase で新しいプロジェクトを作成します。
+2. `Table Editor` で `redirects` テーブルを作成します。
+3. そのテーブルに次のカラムを追加します。
+
+- `id` : `text` / Primary Key
+- `url` : `text`
+- `title` : `text`
+- `icon_url` : `text`
+- `icon_path` : `text`
+- `creator_key` : `text`
+- `network_key` : `text`
+
+4. `Storage` で `redirect-icons` という public bucket を作成します。
+5. `SQL Editor` で次のSQLを実行します。
+
+```sql
+alter table public.redirects enable row level security;
+
+create policy "redirects are readable by everyone"
+on public.redirects
+for select
+to anon
+using (true);
+
+create policy "redirects are writable by everyone"
+on public.redirects
+for insert
+to anon
+with check (true);
+
+create policy "redirects are updatable by everyone"
+on public.redirects
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "redirects are deletable by everyone"
+on public.redirects
+for delete
+to anon
+using (true);
+
+create policy "icons are readable by everyone"
+on storage.objects
+for select
+to anon
+using (bucket_id = 'redirect-icons');
+
+create policy "icons are writable by everyone"
+on storage.objects
+for insert
+to anon
+with check (bucket_id = 'redirect-icons');
+
+create policy "icons are updatable by everyone"
+on storage.objects
+for update
+to anon
+using (bucket_id = 'redirect-icons')
+with check (bucket_id = 'redirect-icons');
+
+create policy "icons are deletable by everyone"
+on storage.objects
+for delete
+to anon
+using (bucket_id = 'redirect-icons');
+```
+
+すでに `redirects` テーブルを作成済みで、`creator_key` と `network_key` がない場合は、追加で次のSQLを実行します。
+
+```sql
+alter table public.redirects
+add column if not exists creator_key text,
+add column if not exists network_key text;
+```
+
+6. `Project Settings` → `API` で `Project URL` と `anon` key を確認します。
+7. `config.js` を開いて、次のように値を入れます。
+
+```js
+window.APP_CONFIG = {
+  supabaseUrl: "https://your-project-id.supabase.co",
+  supabaseAnonKey: "your-anon-key",
+  supabaseBucket: "redirect-icons"
+};
+```
 
 ## 使い方
 
@@ -71,7 +165,7 @@ GitHub Pages で公開すると、URLはだいたい次のようになります�
 
 例:
 
-- `https://kahoot.it` → `kahoot`
+- `https://example.com` → `example`
 - `https://www.example.com` → `example`
 
 同じ名前がすでにある場合は、次のように連番が付きます。
@@ -82,16 +176,16 @@ GitHub Pages で公開すると、URLはだいたい次のようになります�
 
 ## 注意
 
-この GitHub Pages 版は保存に `localStorage` を使っています。
+この版では保存に Supabase を使っています。
 
-そのため、作成したリダイレクト情報は次の条件でのみ使えます。
+そのため、作成したリダイレクト情報は次の場所で共通して使えます。
 
-- 同じブラウザ
-- 同じ端末
+- 別のブラウザ
+- 別の端末
+- 同じWi-Fiでなくても可
 
-つまり、Aのパソコンで作ったリダイレクトは、Bのスマホや別ブラウザではそのまま共有できません。
-
-もし「どの端末からでも同じ `/kahoot` を使いたい」なら、GitHub Pages だけではなく、バックエンドやデータベース付きの構成が必要です。
+`わたしのリダイレクト` の判定には、ブラウザごとのIDとネットワークの外向きIPを使います。
+ブラウザからWi-Fi名そのものは取得できないため、同じWi-Fiかどうかは「同じグローバルIPかどうか」で近似しています。
 
 ## ローカル開発用ファイル
 
