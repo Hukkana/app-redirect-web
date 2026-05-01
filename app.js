@@ -12,7 +12,9 @@ const editingIdInput = document.getElementById("editing-id");
 const urlInput = document.getElementById("url");
 const titleInput = document.getElementById("title");
 const iconInput = document.getElementById("icon");
+const iconBackgroundColorInput = document.getElementById("icon-background-color");
 const iconSizeInput = document.getElementById("icon-size");
+const iconForegroundScaleInput = document.getElementById("icon-foreground-scale");
 const iconPositionXInput = document.getElementById("icon-position-x");
 const iconPositionYInput = document.getElementById("icon-position-y");
 const submitButton = document.getElementById("submit-button");
@@ -54,7 +56,8 @@ const supabaseClient =
 
 let iconDataUrl = "";
 let iconBlob = null;
-let selectedIconFile = null;
+let selectedIconSourceUrl = "";
+let selectedIconSourceName = "";
 let editingOriginalIconUrl = "";
 let editingOriginalIconPath = "";
 let editingOriginalCreatorKey = "";
@@ -64,6 +67,16 @@ let identityPromise = null;
 
 function isSupabaseReady() {
   return Boolean(supabaseClient);
+}
+
+function formatSupabaseError(prefix, error) {
+  const message = error && error.message ? error.message : "";
+
+  if (message.includes("Could not find the table 'public.redirects'")) {
+    return "Supabaseの `public.redirects` テーブルがまだありません。README の SQL でテーブルを作成してください。";
+  }
+
+  return `${prefix}: ${message || "unknown error"}`;
 }
 
 function setStatus(message, isError = false) {
@@ -167,7 +180,8 @@ function resetFormState() {
   editingIdInput.value = "";
   iconDataUrl = "";
   iconBlob = null;
-  selectedIconFile = null;
+  selectedIconSourceUrl = "";
+  selectedIconSourceName = "";
   editingOriginalIconUrl = "";
   editingOriginalIconPath = "";
   editingOriginalCreatorKey = "";
@@ -186,6 +200,101 @@ function fileToDataUrl(file) {
   });
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function hexToRgb(hex) {
+  const clean = hex.replace("#", "");
+  const expanded = clean.length === 3 ? clean.split("").map((char) => char + char).join("") : clean;
+  const value = Number.parseInt(expanded, 16);
+
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255
+  };
+}
+
+function rgba(rgb, alpha) {
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function adjustColor(hex, amount) {
+  const rgb = hexToRgb(hex);
+  const mix = amount >= 0 ? 255 : 0;
+  const ratio = Math.abs(amount);
+
+  const next = {
+    r: Math.round(rgb.r + (mix - rgb.r) * ratio),
+    g: Math.round(rgb.g + (mix - rgb.g) * ratio),
+    b: Math.round(rgb.b + (mix - rgb.b) * ratio)
+  };
+
+  return `rgb(${next.r}, ${next.g}, ${next.b})`;
+}
+
+function roundedRectPath(context, x, y, width, height, radius) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.arcTo(x + width, y, x + width, y + height, radius);
+  context.arcTo(x + width, y + height, x, y + height, radius);
+  context.arcTo(x, y + height, x, y, radius);
+  context.arcTo(x, y, x + width, y, radius);
+  context.closePath();
+}
+
+function drawIconBackground(context, size) {
+  const baseColor = iconBackgroundColorInput.value || "#2f80ed";
+  const radius = size * 0.225;
+
+  roundedRectPath(context, 0, 0, size, size, radius);
+  context.save();
+  context.clip();
+
+  const fill = context.createLinearGradient(0, 0, size, size);
+  fill.addColorStop(0, adjustColor(baseColor, 0.28));
+  fill.addColorStop(0.5, baseColor);
+  fill.addColorStop(1, adjustColor(baseColor, -0.24));
+  context.fillStyle = fill;
+  context.fillRect(0, 0, size, size);
+
+  const topGlow = context.createRadialGradient(size * 0.22, size * 0.18, size * 0.04, size * 0.22, size * 0.18, size * 0.48);
+  topGlow.addColorStop(0, "rgba(255,255,255,0.58)");
+  topGlow.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = topGlow;
+  context.fillRect(0, 0, size, size);
+
+  const lowerGlass = context.createLinearGradient(0, size * 0.36, 0, size);
+  lowerGlass.addColorStop(0, "rgba(255,255,255,0)");
+  lowerGlass.addColorStop(1, "rgba(255,255,255,0.18)");
+  context.fillStyle = lowerGlass;
+  context.fillRect(0, 0, size, size);
+
+  context.restore();
+
+  context.save();
+  context.strokeStyle = rgba(hexToRgb(baseColor), 0.34);
+  context.lineWidth = Math.max(1, size * 0.015);
+  roundedRectPath(
+    context,
+    context.lineWidth / 2,
+    context.lineWidth / 2,
+    size - context.lineWidth,
+    size - context.lineWidth,
+    radius - context.lineWidth / 2
+  );
+  context.stroke();
+  context.restore();
+
+  context.save();
+  context.globalCompositeOperation = "screen";
+  context.fillStyle = "rgba(255,255,255,0.22)";
+  roundedRectPath(context, size * 0.08, size * 0.07, size * 0.74, size * 0.3, size * 0.14);
+  context.fill();
+  context.restore();
+}
+
 function loadImage(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -195,11 +304,11 @@ function loadImage(source) {
   });
 }
 
-async function fileToIconAssets(file) {
+async function fileToIconAssets(source) {
   const size = getIconSize();
   const positionX = getRangeValue(iconPositionXInput, 50) / 100;
   const positionY = getRangeValue(iconPositionYInput, 50) / 100;
-  const source = await fileToDataUrl(file);
+  const foregroundScale = getRangeValue(iconForegroundScaleInput, 68) / 100;
   const image = await loadImage(source);
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -210,17 +319,34 @@ async function fileToIconAssets(file) {
 
   canvas.width = size;
   canvas.height = size;
+  drawIconBackground(context, size);
 
-  const scale = Math.max(size / image.width, size / image.height);
+  const foregroundBoxSize = size * foregroundScale;
+  const scale = Math.max(foregroundBoxSize / image.width, foregroundBoxSize / image.height);
   const drawWidth = image.width * scale;
   const drawHeight = image.height * scale;
-  const overflowX = Math.max(0, drawWidth - size);
-  const overflowY = Math.max(0, drawHeight - size);
-  const offsetX = -overflowX * positionX;
-  const offsetY = -overflowY * positionY;
+  const overflowX = Math.max(0, drawWidth - foregroundBoxSize);
+  const overflowY = Math.max(0, drawHeight - foregroundBoxSize);
+  const boxOffsetX = (size - foregroundBoxSize) / 2;
+  const boxOffsetY = (size - foregroundBoxSize) / 2;
+  const offsetX = boxOffsetX - overflowX * positionX;
+  const offsetY = boxOffsetY - overflowY * positionY;
 
-  context.clearRect(0, 0, size, size);
+  context.save();
+  context.shadowColor = "rgba(15, 23, 42, 0.2)";
+  context.shadowBlur = size * 0.06;
+  context.shadowOffsetY = size * 0.025;
   context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+  context.restore();
+
+  context.save();
+  context.globalCompositeOperation = "screen";
+  const overlay = context.createLinearGradient(0, boxOffsetY, 0, boxOffsetY + foregroundBoxSize);
+  overlay.addColorStop(0, "rgba(255,255,255,0.28)");
+  overlay.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = overlay;
+  context.fillRect(boxOffsetX, boxOffsetY, foregroundBoxSize, foregroundBoxSize);
+  context.restore();
 
   const dataUrl = canvas.toDataURL("image/png");
   const blob = await new Promise((resolve, reject) => {
@@ -242,7 +368,7 @@ function getIconSize() {
     return DEFAULT_ICON_SIZE;
   }
 
-  return Math.min(1024, Math.max(64, parsed));
+  return clamp(parsed, 64, 1024);
 }
 
 function getRangeValue(input, fallback) {
@@ -251,19 +377,19 @@ function getRangeValue(input, fallback) {
     return fallback;
   }
 
-  return Math.min(100, Math.max(0, parsed));
+  return clamp(parsed, 0, 100);
 }
 
 async function regenerateSelectedIcon() {
-  if (!selectedIconFile) {
+  if (!selectedIconSourceUrl) {
     return;
   }
 
-  const iconAssets = await fileToIconAssets(selectedIconFile);
+  const iconAssets = await fileToIconAssets(selectedIconSourceUrl);
   iconDataUrl = iconAssets.dataUrl;
   iconBlob = iconAssets.blob;
   previewImage.src = iconDataUrl;
-  previewName.textContent = `${selectedIconFile.name} を ${getIconSize()}x${getIconSize()} に調整`;
+  previewName.textContent = `${selectedIconSourceName} を ${getIconSize()}x${getIconSize()} に調整`;
   previewWrap.hidden = false;
 }
 
@@ -404,7 +530,7 @@ async function listRedirects() {
     .order("id", { ascending: true });
 
   if (error) {
-    throw new Error(`リダイレクト一覧の取得に失敗しました: ${error.message}`);
+    throw new Error(formatSupabaseError("リダイレクト一覧の取得に失敗しました", error));
   }
 
   const entries = data || [];
@@ -420,7 +546,7 @@ async function getRedirectById(id) {
     .maybeSingle();
 
   if (error) {
-    throw new Error(`リダイレクト設定の取得に失敗しました: ${error.message}`);
+    throw new Error(formatSupabaseError("リダイレクト設定の取得に失敗しました", error));
   }
 
   if (data) {
@@ -466,7 +592,7 @@ async function saveRedirect(entry, originalIconPath = "") {
     if (entry.icon_path && entry.icon_path !== originalIconPath) {
       await removeIcon(entry.icon_path);
     }
-    throw new Error(`リダイレクト設定の保存に失敗しました: ${error.message}`);
+    throw new Error(formatSupabaseError("リダイレクト設定の保存に失敗しました", error));
   }
 
   cacheRedirect(entry);
@@ -475,7 +601,7 @@ async function saveRedirect(entry, originalIconPath = "") {
 async function deleteRedirectRemote(id, iconPath) {
   const { error } = await supabaseClient.from("redirects").delete().eq("id", id);
   if (error) {
-    throw new Error(`削除に失敗しました: ${error.message}`);
+    throw new Error(formatSupabaseError("削除に失敗しました", error));
   }
 
   await removeIcon(iconPath);
@@ -560,6 +686,8 @@ function startEditing(entry) {
   titleInput.value = entry.title;
   iconDataUrl = entry.icon_url || "";
   iconBlob = null;
+  selectedIconSourceUrl = entry.icon_url || "";
+  selectedIconSourceName = "現在のアイコン";
   editingOriginalIconUrl = entry.icon_url || "";
   editingOriginalIconPath = entry.icon_path || "";
   editingOriginalCreatorKey = entry.creator_key || "";
@@ -666,26 +794,29 @@ if (iconInput) {
     if (!file) {
       iconDataUrl = "";
       iconBlob = null;
-      selectedIconFile = null;
+      selectedIconSourceUrl = "";
+      selectedIconSourceName = "";
       previewWrap.hidden = true;
       return;
     }
 
     try {
-      selectedIconFile = file;
+      selectedIconSourceUrl = await fileToDataUrl(file);
+      selectedIconSourceName = file.name;
       await regenerateSelectedIcon();
       setStatus("");
     } catch (error) {
       iconDataUrl = "";
       iconBlob = null;
-      selectedIconFile = null;
+      selectedIconSourceUrl = "";
+      selectedIconSourceName = "";
       previewWrap.hidden = true;
       setStatus(error.message, true);
     }
   });
 }
 
-[iconSizeInput, iconPositionXInput, iconPositionYInput].forEach((input) => {
+[iconBackgroundColorInput, iconSizeInput, iconForegroundScaleInput, iconPositionXInput, iconPositionYInput].forEach((input) => {
   if (!input) {
     return;
   }
