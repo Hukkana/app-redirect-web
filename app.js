@@ -635,6 +635,10 @@ async function openDeleteModal(id) {
 
 function closeDeleteModal() {
   pendingDeleteId = "";
+  deleteConfirmButton.disabled = false;
+  deleteCancelButton.disabled = false;
+  deleteConfirmButton.textContent = "削除する";
+  deleteModalText.textContent = "";
   deleteModal.hidden = true;
 }
 
@@ -776,10 +780,6 @@ if (deleteConfirmButton) {
     } catch (error) {
       deleteModalText.textContent = error.message || "削除に失敗しました。";
       setStatus(error.message, true);
-    } finally {
-      deleteConfirmButton.disabled = false;
-      deleteCancelButton.disabled = false;
-      deleteConfirmButton.textContent = "削除する";
     }
   });
 }
@@ -797,6 +797,10 @@ document.addEventListener("keydown", (event) => {
     closeDeleteModal();
   }
 });
+
+window.addEventListener("beforeunload", closeDeleteModal);
+window.addEventListener("pageshow", closeDeleteModal);
+window.addEventListener("load", closeDeleteModal);
 
 if (autoRedirectToggle) {
   autoRedirectToggle.checked = loadAutoRedirectEnabled();
