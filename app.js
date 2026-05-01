@@ -12,9 +12,7 @@ const editingIdInput = document.getElementById("editing-id");
 const urlInput = document.getElementById("url");
 const titleInput = document.getElementById("title");
 const iconInput = document.getElementById("icon");
-const iconBackgroundColorInput = document.getElementById("icon-background-color");
 const iconSizeInput = document.getElementById("icon-size");
-const iconForegroundScaleInput = document.getElementById("icon-foreground-scale");
 const iconPositionXInput = document.getElementById("icon-position-x");
 const iconPositionYInput = document.getElementById("icon-position-y");
 const submitButton = document.getElementById("submit-button");
@@ -204,97 +202,6 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function hexToRgb(hex) {
-  const clean = hex.replace("#", "");
-  const expanded = clean.length === 3 ? clean.split("").map((char) => char + char).join("") : clean;
-  const value = Number.parseInt(expanded, 16);
-
-  return {
-    r: (value >> 16) & 255,
-    g: (value >> 8) & 255,
-    b: value & 255
-  };
-}
-
-function rgba(rgb, alpha) {
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
-}
-
-function adjustColor(hex, amount) {
-  const rgb = hexToRgb(hex);
-  const mix = amount >= 0 ? 255 : 0;
-  const ratio = Math.abs(amount);
-
-  const next = {
-    r: Math.round(rgb.r + (mix - rgb.r) * ratio),
-    g: Math.round(rgb.g + (mix - rgb.g) * ratio),
-    b: Math.round(rgb.b + (mix - rgb.b) * ratio)
-  };
-
-  return `rgb(${next.r}, ${next.g}, ${next.b})`;
-}
-
-function roundedRectPath(context, x, y, width, height, radius) {
-  context.beginPath();
-  context.moveTo(x + radius, y);
-  context.arcTo(x + width, y, x + width, y + height, radius);
-  context.arcTo(x + width, y + height, x, y + height, radius);
-  context.arcTo(x, y + height, x, y, radius);
-  context.arcTo(x, y, x + width, y, radius);
-  context.closePath();
-}
-
-function drawIconBackground(context, size) {
-  const baseColor = iconBackgroundColorInput.value || "#2f80ed";
-  const radius = size * 0.225;
-
-  roundedRectPath(context, 0, 0, size, size, radius);
-  context.save();
-  context.clip();
-
-  const fill = context.createLinearGradient(0, 0, size, size);
-  fill.addColorStop(0, adjustColor(baseColor, 0.28));
-  fill.addColorStop(0.5, baseColor);
-  fill.addColorStop(1, adjustColor(baseColor, -0.24));
-  context.fillStyle = fill;
-  context.fillRect(0, 0, size, size);
-
-  const topGlow = context.createRadialGradient(size * 0.22, size * 0.18, size * 0.04, size * 0.22, size * 0.18, size * 0.48);
-  topGlow.addColorStop(0, "rgba(255,255,255,0.58)");
-  topGlow.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = topGlow;
-  context.fillRect(0, 0, size, size);
-
-  const lowerGlass = context.createLinearGradient(0, size * 0.36, 0, size);
-  lowerGlass.addColorStop(0, "rgba(255,255,255,0)");
-  lowerGlass.addColorStop(1, "rgba(255,255,255,0.18)");
-  context.fillStyle = lowerGlass;
-  context.fillRect(0, 0, size, size);
-
-  context.restore();
-
-  context.save();
-  context.strokeStyle = rgba(hexToRgb(baseColor), 0.34);
-  context.lineWidth = Math.max(1, size * 0.015);
-  roundedRectPath(
-    context,
-    context.lineWidth / 2,
-    context.lineWidth / 2,
-    size - context.lineWidth,
-    size - context.lineWidth,
-    radius - context.lineWidth / 2
-  );
-  context.stroke();
-  context.restore();
-
-  context.save();
-  context.globalCompositeOperation = "screen";
-  context.fillStyle = "rgba(255,255,255,0.22)";
-  roundedRectPath(context, size * 0.08, size * 0.07, size * 0.74, size * 0.3, size * 0.14);
-  context.fill();
-  context.restore();
-}
-
 function loadImage(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -308,7 +215,6 @@ async function fileToIconAssets(source) {
   const size = getIconSize();
   const positionX = getRangeValue(iconPositionXInput, 50) / 100;
   const positionY = getRangeValue(iconPositionYInput, 50) / 100;
-  const foregroundScale = getRangeValue(iconForegroundScaleInput, 68) / 100;
   const image = await loadImage(source);
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -319,34 +225,17 @@ async function fileToIconAssets(source) {
 
   canvas.width = size;
   canvas.height = size;
-  drawIconBackground(context, size);
 
-  const foregroundBoxSize = size * foregroundScale;
-  const scale = Math.max(foregroundBoxSize / image.width, foregroundBoxSize / image.height);
+  const scale = Math.max(size / image.width, size / image.height);
   const drawWidth = image.width * scale;
   const drawHeight = image.height * scale;
-  const overflowX = Math.max(0, drawWidth - foregroundBoxSize);
-  const overflowY = Math.max(0, drawHeight - foregroundBoxSize);
-  const boxOffsetX = (size - foregroundBoxSize) / 2;
-  const boxOffsetY = (size - foregroundBoxSize) / 2;
-  const offsetX = boxOffsetX - overflowX * positionX;
-  const offsetY = boxOffsetY - overflowY * positionY;
+  const overflowX = Math.max(0, drawWidth - size);
+  const overflowY = Math.max(0, drawHeight - size);
+  const offsetX = -overflowX * positionX;
+  const offsetY = -overflowY * positionY;
 
-  context.save();
-  context.shadowColor = "rgba(15, 23, 42, 0.2)";
-  context.shadowBlur = size * 0.06;
-  context.shadowOffsetY = size * 0.025;
+  context.clearRect(0, 0, size, size);
   context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-  context.restore();
-
-  context.save();
-  context.globalCompositeOperation = "screen";
-  const overlay = context.createLinearGradient(0, boxOffsetY, 0, boxOffsetY + foregroundBoxSize);
-  overlay.addColorStop(0, "rgba(255,255,255,0.28)");
-  overlay.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = overlay;
-  context.fillRect(boxOffsetX, boxOffsetY, foregroundBoxSize, foregroundBoxSize);
-  context.restore();
 
   const dataUrl = canvas.toDataURL("image/png");
   const blob = await new Promise((resolve, reject) => {
@@ -816,7 +705,7 @@ if (iconInput) {
   });
 }
 
-[iconBackgroundColorInput, iconSizeInput, iconForegroundScaleInput, iconPositionXInput, iconPositionYInput].forEach((input) => {
+[iconSizeInput, iconPositionXInput, iconPositionYInput].forEach((input) => {
   if (!input) {
     return;
   }
@@ -879,10 +768,18 @@ if (deleteConfirmButton) {
     }
 
     try {
+      deleteConfirmButton.disabled = true;
+      deleteCancelButton.disabled = true;
+      deleteConfirmButton.textContent = "削除中...";
       await deleteRedirect(pendingDeleteId);
       closeDeleteModal();
     } catch (error) {
+      deleteModalText.textContent = error.message || "削除に失敗しました。";
       setStatus(error.message, true);
+    } finally {
+      deleteConfirmButton.disabled = false;
+      deleteCancelButton.disabled = false;
+      deleteConfirmButton.textContent = "削除する";
     }
   });
 }
