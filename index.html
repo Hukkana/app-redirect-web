@@ -154,15 +154,25 @@
           </label>
 
           <label class="field">
-            <span>アイコン画像</span>
+            <span>前景パーツ画像</span>
             <input class="input squircle file-input" id="icon" name="icon" type="file" accept="image/*" required>
           </label>
 
           <fieldset class="icon-settings">
             <legend>アイコン調整</legend>
             <label class="field">
+              <span>背景色</span>
+              <input class="input squircle color-input" id="icon-background-color" name="iconBackgroundColor" type="color" value="#2f80ed">
+            </label>
+
+            <label class="field">
               <span>解像度</span>
               <input class="input squircle" id="icon-size" name="iconSize" type="number" min="64" max="1024" step="1" value="180" inputmode="numeric">
+            </label>
+
+            <label class="range-field">
+              <span>前景サイズ</span>
+              <input id="icon-foreground-scale" name="iconForegroundScale" type="range" min="35" max="92" value="68">
             </label>
 
             <label class="range-field">
@@ -180,6 +190,8 @@
             <img id="preview-image" class="preview-image" alt="icon preview">
             <p id="preview-name" class="preview-name"></p>
           </div>
+
+          <p class="helper-text">透過PNGか透過SVGを前景パーツに使うと、ホーム画面で立体感を出しやすくなります。</p>
 
           <div class="form-actions">
             <button type="submit" class="button squircle" id="submit-button">作成</button>
