@@ -6,6 +6,19 @@
     <title>Redirect Builder</title>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <script>
+      (function () {
+        var supportsCornerShape =
+          window.CSS &&
+          CSS.supports &&
+          CSS.supports("corner-shape", "squircle");
+
+        document.documentElement.classList.add(
+          supportsCornerShape ? "supports-corner-shape" : "no-corner-shape"
+        );
+        document.documentElement.dataset.cornerShape = supportsCornerShape ? "squircle" : "unsupported";
+      })();
+    </script>
     <link rel="stylesheet" href="./styles.css">
     <script src="./config.js"></script>
     <script>
