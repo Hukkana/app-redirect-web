@@ -413,41 +413,39 @@ h1 {
   margin-top: 20px;
 }
 
-@supports (corner-shape: squircle) {
-  .card {
-    border-radius: calc(36px * var(--squircle-radius-scale));
-    corner-shape: squircle;
-  }
+.supports-corner-shape .card {
+  border-radius: calc(36px * var(--squircle-radius-scale));
+  corner-shape: squircle;
+}
 
-  .notice,
-  .toggle-row {
-    border-radius: calc(22px * var(--squircle-radius-scale));
-    corner-shape: squircle;
-  }
+.supports-corner-shape .notice,
+.supports-corner-shape .toggle-row {
+  border-radius: calc(22px * var(--squircle-radius-scale));
+  corner-shape: squircle;
+}
 
-  .icon-settings,
-  .preview-wrap,
-  .result-box a,
-  .saved-item-link,
-  .saved-item {
-    border-radius: calc(24px * var(--squircle-radius-scale));
-    corner-shape: squircle;
-  }
+.supports-corner-shape .icon-settings,
+.supports-corner-shape .preview-wrap,
+.supports-corner-shape .result-box a,
+.supports-corner-shape .saved-item-link,
+.supports-corner-shape .saved-item {
+  border-radius: calc(24px * var(--squircle-radius-scale));
+  corner-shape: squircle;
+}
 
-  .squircle {
-    border-radius: calc(26px * var(--squircle-radius-scale));
-    corner-shape: squircle;
-  }
+.supports-corner-shape .squircle {
+  border-radius: calc(26px * var(--squircle-radius-scale));
+  corner-shape: squircle;
+}
 
-  .preview-image {
-    border-radius: calc(14px * var(--squircle-radius-scale));
-    corner-shape: squircle;
-  }
+.supports-corner-shape .preview-image {
+  border-radius: calc(14px * var(--squircle-radius-scale));
+  corner-shape: squircle;
+}
 
-  .modal-card {
-    border-radius: calc(28px * var(--squircle-radius-scale));
-    corner-shape: squircle;
-  }
+.supports-corner-shape .modal-card {
+  border-radius: calc(28px * var(--squircle-radius-scale));
+  corner-shape: squircle;
 }
 
 @media (max-width: 640px) {
@@ -456,10 +454,8 @@ h1 {
     border-radius: 28px;
   }
 
-  @supports (corner-shape: squircle) {
-    .card {
-      border-radius: calc(28px * var(--squircle-radius-scale));
-    }
+  .supports-corner-shape .card {
+    border-radius: calc(28px * var(--squircle-radius-scale));
   }
 
   .result-box {
