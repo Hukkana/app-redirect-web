@@ -94,6 +94,30 @@
           return "";
         }
 
+        function openRedirectTarget(entry) {
+          if (!entry.app_scheme) {
+            window.location.replace(entry.url);
+            return;
+          }
+
+          var fallbackTimer = window.setTimeout(function () {
+            window.location.replace(entry.url);
+          }, 1200);
+
+          function clearFallback() {
+            window.clearTimeout(fallbackTimer);
+          }
+
+          window.addEventListener("pagehide", clearFallback, { once: true });
+          document.addEventListener("visibilitychange", function () {
+            if (document.hidden) {
+              clearFallback();
+            }
+          });
+
+          window.location.href = entry.app_scheme;
+        }
+
         if (redirectParam) {
           requestedId = redirectParam;
         } else if (isGitHubPagesProjectSite) {
@@ -120,7 +144,7 @@
             SUPABASE_URL +
             "/rest/v1/redirects?id=eq." +
             encodeURIComponent(requestedId) +
-            "&select=id,url,title,icon_url";
+            "&select=id,url,title,icon_url,app_scheme";
 
           fetch(apiUrl, {
             headers: {
@@ -157,7 +181,7 @@
               }
 
               if (localStorage.getItem(AUTO_REDIRECT_KEY) !== "false") {
-                window.location.replace(entry.url);
+                openRedirectTarget(entry);
               }
             })
             .catch(function (error) {
@@ -196,6 +220,11 @@
           <label class="field">
             <span>リダイレクト先URL</span>
             <input class="input squircle" id="url" name="url" type="url" placeholder="https://example.com" inputmode="url" required>
+          </label>
+
+          <label class="field">
+            <span>アプリを直接開くURL（任意）</span>
+            <input class="input squircle" id="app-scheme" name="appScheme" type="text" placeholder="chatgpt://" inputmode="url">
           </label>
 
           <label class="field">
