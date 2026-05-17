@@ -10,6 +10,7 @@ const redirectView = document.getElementById("redirect-view");
 const form = document.getElementById("create-form");
 const editingIdInput = document.getElementById("editing-id");
 const urlInput = document.getElementById("url");
+const appSchemeInput = document.getElementById("app-scheme");
 const titleInput = document.getElementById("title");
 const iconInput = document.getElementById("icon");
 const publicToggle = document.getElementById("public-toggle");
@@ -78,6 +79,10 @@ function formatSupabaseError(prefix, error) {
 
   if (message.includes("column redirects.is_public does not exist")) {
     return "Supabaseの `redirects` テーブルに `is_public` 列がまだありません。SQL Editor で `alter table public.redirects add column if not exists is_public boolean not null default true;` を実行してください。";
+  }
+
+  if (message.includes("column redirects.app_scheme does not exist")) {
+    return "Supabaseの `redirects` テーブルに `app_scheme` 列がまだありません。SQL Editor で `alter table public.redirects add column if not exists app_scheme text;` を実行してください。";
   }
 
   return `${prefix}: ${message || "unknown error"}`;
@@ -182,6 +187,7 @@ function clearRedirectCache(id) {
 function resetFormState() {
   form.reset();
   editingIdInput.value = "";
+  appSchemeInput.value = "";
   iconDataUrl = "";
   iconBlob = null;
   selectedIconSourceUrl = "";
@@ -443,7 +449,7 @@ function buildRedirectMap(entries) {
 async function listRedirects() {
   const { data, error } = await supabaseClient
     .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme")
     .order("id", { ascending: true });
 
   if (error) {
@@ -458,7 +464,7 @@ async function listRedirects() {
 async function getRedirectById(id) {
   const { data, error } = await supabaseClient
     .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme")
     .eq("id", id)
     .maybeSingle();
 
@@ -552,6 +558,7 @@ function renderRedirectItems(container, list, entries, showActions) {
       <p class="saved-item-title">${entry.title}</p>
       <a class="saved-item-link" href="${buildRedirectUrl(entry.id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(entry.id)}</a>
       <p class="saved-item-meta">${entry.url}</p>
+      ${entry.app_scheme ? `<p class="saved-item-meta">アプリURL: ${entry.app_scheme}</p>` : ""}
       ${
         showActions
           ? `<div class="saved-item-actions">
@@ -563,6 +570,30 @@ function renderRedirectItems(container, list, entries, showActions) {
     `;
     container.appendChild(item);
   });
+}
+
+function openRedirectTarget(entry) {
+  if (!entry.app_scheme) {
+    window.location.replace(entry.url);
+    return;
+  }
+
+  const fallbackTimer = window.setTimeout(() => {
+    window.location.replace(entry.url);
+  }, 1200);
+
+  const clearFallback = () => {
+    window.clearTimeout(fallbackTimer);
+  };
+
+  window.addEventListener("pagehide", clearFallback, { once: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearFallback();
+    }
+  });
+
+  window.location.href = entry.app_scheme;
 }
 
 function showRedirectView(entry) {
@@ -579,12 +610,12 @@ function showRedirectView(entry) {
   if (openNowButton) {
     openNowButton.hidden = loadAutoRedirectEnabled();
     openNowButton.onclick = () => {
-      window.location.replace(entry.url);
+      openRedirectTarget(entry);
     };
   }
 
   if (loadAutoRedirectEnabled()) {
-    window.location.replace(entry.url);
+    openRedirectTarget(entry);
   }
 }
 
@@ -600,6 +631,7 @@ function showRedirectNotFound(id) {
 function startEditing(entry) {
   editingIdInput.value = entry.id;
   urlInput.value = entry.url;
+  appSchemeInput.value = entry.app_scheme || "";
   titleInput.value = entry.title;
   iconDataUrl = entry.icon_url || "";
   iconBlob = null;
@@ -864,6 +896,15 @@ if (form) {
         throw new Error("http/https のURLのみ利用できます。");
       }
 
+      const trimmedAppScheme = appSchemeInput.value.trim();
+      if (trimmedAppScheme) {
+        try {
+          new URL(trimmedAppScheme);
+        } catch {
+          throw new Error("アプリを直接開くURLは `chatgpt://` のようなURL形式で入力してください。");
+        }
+      }
+
       const trimmedTitle = titleInput.value.trim();
       if (!trimmedTitle) {
         throw new Error("タイトルを入力してください。");
@@ -896,7 +937,8 @@ if (form) {
         icon_path: finalIconPath,
         creator_key: editingOriginalCreatorKey || identity.deviceKey,
         network_key: editingOriginalNetworkKey || identity.networkKey,
-        is_public: publicToggle.checked
+        is_public: publicToggle.checked,
+        app_scheme: trimmedAppScheme || null
       };
 
       await saveRedirect(entry, editingOriginalIconPath);
