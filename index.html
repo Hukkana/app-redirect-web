@@ -8,10 +8,27 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <script>
       (function () {
-        var supportsCornerShape =
-          window.CSS &&
-          CSS.supports &&
-          CSS.supports("corner-shape", "squircle");
+        function supportsRenderedCornerShape() {
+          if (!window.CSS || !CSS.supports || !CSS.supports("corner-shape", "squircle")) {
+            return false;
+          }
+
+          var el = document.createElement("div");
+          el.style.position = "absolute";
+          el.style.width = "0";
+          el.style.height = "0";
+          el.style.overflow = "hidden";
+          el.style.borderRadius = "50%";
+          el.style.setProperty("corner-shape", "squircle");
+          document.documentElement.appendChild(el);
+
+          var computed = getComputedStyle(el).getPropertyValue("corner-shape").trim();
+          document.documentElement.removeChild(el);
+
+          return computed === "squircle";
+        }
+
+        var supportsCornerShape = supportsRenderedCornerShape();
 
         document.documentElement.classList.add(
           supportsCornerShape ? "supports-corner-shape" : "no-corner-shape"
@@ -60,6 +77,21 @@
             document.head.appendChild(element);
           }
           element.href = href;
+        }
+
+        function getAppleAppBannerContent(targetUrl) {
+          try {
+            var parsed = new URL(targetUrl);
+            var host = parsed.hostname.replace(/^www\./, "");
+
+            if (host === "x.com" || host === "twitter.com") {
+              return "app-id=333903271, app-argument=" + targetUrl;
+            }
+          } catch (error) {
+            return "";
+          }
+
+          return "";
         }
 
         if (redirectParam) {
@@ -112,6 +144,11 @@
               setMeta("apple-mobile-web-app-title", entry.title || "Redirect");
               setMeta("apple-mobile-web-app-capable", "yes");
               setMeta("apple-mobile-web-app-status-bar-style", "default");
+
+              var appleAppBannerContent = getAppleAppBannerContent(entry.url);
+              if (appleAppBannerContent) {
+                setMeta("apple-itunes-app", appleAppBannerContent);
+              }
 
               if (entry.icon_url) {
                 setLink("icon", entry.icon_url);
@@ -169,6 +206,15 @@
           <label class="field">
             <span>アイコン画像</span>
             <input class="input squircle file-input" id="icon" name="icon" type="file" accept="image/*" required>
+          </label>
+
+          <label class="toggle-row form-toggle" for="public-toggle">
+            <span class="toggle-copy">
+              <strong>みんなのリダイレクトに表示</strong>
+              <small>OFFにすると、わたしのリダイレクトにだけ表示します。</small>
+            </span>
+            <input id="public-toggle" class="toggle-input" type="checkbox" checked>
+            <span class="toggle-ui" aria-hidden="true"></span>
           </label>
 
           <fieldset class="icon-settings">
