@@ -53,8 +53,22 @@ GitHub Pages で公開すると、URLはだいたい次のようになります�
 ## Supabase セットアップ
 
 1. Supabase で新しいプロジェクトを作成します。
-2. `Table Editor` で `redirects` テーブルを作成します。
-3. そのテーブルに次のカラムを追加します。
+2. `SQL Editor` を開き、まず次のSQLで `redirects` テーブルを作成します。
+
+```sql
+create table if not exists public.redirects (
+  id text primary key,
+  url text not null,
+  title text not null,
+  icon_url text not null,
+  icon_path text not null,
+  creator_key text,
+  network_key text,
+  is_public boolean not null default true
+);
+```
+
+3. テーブルができたら、カラムは次の状態になっていればOKです。
 
 - `id` : `text` / Primary Key
 - `url` : `text`
@@ -63,9 +77,10 @@ GitHub Pages で公開すると、URLはだいたい次のようになります�
 - `icon_path` : `text`
 - `creator_key` : `text`
 - `network_key` : `text`
+- `is_public` : `boolean` / default `true`
 
 4. `Storage` で `redirect-icons` という public bucket を作成します。
-5. `SQL Editor` で次のSQLを実行します。
+5. そのあと `SQL Editor` で次のSQLを実行します。
 
 ```sql
 alter table public.redirects enable row level security;
@@ -121,12 +136,13 @@ to anon
 using (bucket_id = 'redirect-icons');
 ```
 
-すでに `redirects` テーブルを作成済みで、`creator_key` と `network_key` がない場合は、追加で次のSQLを実行します。
+すでに `redirects` テーブルを作成済みで、`creator_key`、`network_key`、`is_public` がない場合は、追加で次のSQLを実行します。
 
 ```sql
 alter table public.redirects
 add column if not exists creator_key text,
-add column if not exists network_key text;
+add column if not exists network_key text,
+add column if not exists is_public boolean not null default true;
 ```
 
 6. `Project Settings` → `API` で `Project URL` と `anon` key を確認します。
