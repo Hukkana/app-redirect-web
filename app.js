@@ -76,6 +76,10 @@ function formatSupabaseError(prefix, error) {
     return "Supabaseの `public.redirects` テーブルがまだありません。README の SQL でテーブルを作成してください。";
   }
 
+  if (message.includes("column redirects.is_public does not exist")) {
+    return "Supabaseの `redirects` テーブルに `is_public` 列がまだありません。SQL Editor で `alter table public.redirects add column if not exists is_public boolean not null default true;` を実行してください。";
+  }
+
   return `${prefix}: ${message || "unknown error"}`;
 }
 
