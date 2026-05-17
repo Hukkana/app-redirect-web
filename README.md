@@ -64,7 +64,8 @@ create table if not exists public.redirects (
   icon_path text not null,
   creator_key text,
   network_key text,
-  is_public boolean not null default true
+  is_public boolean not null default true,
+  app_scheme text
 );
 ```
 
@@ -78,6 +79,7 @@ create table if not exists public.redirects (
 - `creator_key` : `text`
 - `network_key` : `text`
 - `is_public` : `boolean` / default `true`
+- `app_scheme` : `text` / 任意
 
 4. `Storage` で `redirect-icons` という public bucket を作成します。
 5. そのあと `SQL Editor` で次のSQLを実行します。
@@ -136,13 +138,14 @@ to anon
 using (bucket_id = 'redirect-icons');
 ```
 
-すでに `redirects` テーブルを作成済みで、`creator_key`、`network_key`、`is_public` がない場合は、追加で次のSQLを実行します。
+すでに `redirects` テーブルを作成済みで、`creator_key`、`network_key`、`is_public`、`app_scheme` がない場合は、追加で次のSQLを実行します。
 
 ```sql
 alter table public.redirects
 add column if not exists creator_key text,
 add column if not exists network_key text,
-add column if not exists is_public boolean not null default true;
+add column if not exists is_public boolean not null default true,
+add column if not exists app_scheme text;
 ```
 
 6. `Project Settings` → `API` で `Project URL` と `anon` key を確認します。
@@ -170,11 +173,26 @@ window.APP_CONFIG = {
 
 1. トップページを開く
 2. リダイレクト先URLを入力する
-3. タイトルを入力する
-4. アイコン画像を選ぶ
-5. `作成` を押す
-6. 発行されたURLを開く
-7. そのURLにアクセスすると、自動で登録先へ移動する
+3. アプリを直接開きたい場合だけ、`chatgpt://` のようなアプリURLを入力する
+4. タイトルを入力する
+5. アイコン画像を選ぶ
+6. `作成` を押す
+7. 発行されたURLを開く
+8. そのURLにアクセスすると、自動で登録先へ移動する
+
+## アプリを直接開くURL
+
+`アプリを直接開くURL` は任意です。
+
+- 未入力: 通常通り `https://example.com` などのWeb URLへ移動します。
+- 入力あり: まず `chatgpt://` などのアプリURLを開き、約1.2秒後にWeb URLへ戻ります。
+
+例:
+
+- ChatGPT: `chatgpt://`
+- X/Twitter: 通常は `https://x.com` だけでもアプリが開くことがあります。必要な場合だけURL Schemeを指定します。
+
+iPhone Safariでは、自動リダイレクトからのURL Scheme起動がブロックされる場合があります。その場合は、即リダイレクトをOFFにして、リダイレクトページの `いま開く` ボタンから開く方が通りやすいです。
 
 ## id の決まり方
 
