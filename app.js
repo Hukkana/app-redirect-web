@@ -12,6 +12,7 @@ const editingIdInput = document.getElementById("editing-id");
 const urlInput = document.getElementById("url");
 const titleInput = document.getElementById("title");
 const iconInput = document.getElementById("icon");
+const publicToggle = document.getElementById("public-toggle");
 const iconSizeInput = document.getElementById("icon-size");
 const iconPositionXInput = document.getElementById("icon-position-x");
 const iconPositionYInput = document.getElementById("icon-position-y");
@@ -60,6 +61,7 @@ let editingOriginalIconUrl = "";
 let editingOriginalIconPath = "";
 let editingOriginalCreatorKey = "";
 let editingOriginalNetworkKey = "";
+let editingOriginalIsPublic = true;
 let pendingDeleteId = "";
 let identityPromise = null;
 
@@ -184,6 +186,8 @@ function resetFormState() {
   editingOriginalIconPath = "";
   editingOriginalCreatorKey = "";
   editingOriginalNetworkKey = "";
+  editingOriginalIsPublic = true;
+  publicToggle.checked = true;
   submitButton.textContent = "作成";
   cancelEditButton.hidden = true;
   previewWrap.hidden = true;
@@ -367,11 +371,31 @@ function setLink(rel, href, sizes = "") {
   element.href = href;
 }
 
+function getAppleAppBannerContent(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    const host = parsed.hostname.replace(/^www\./, "");
+
+    if (host === "x.com" || host === "twitter.com") {
+      return `app-id=333903271, app-argument=${targetUrl}`;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 function applyWebAppMetadata(entry) {
   document.title = entry.title;
   setMeta("apple-mobile-web-app-title", entry.title);
   setMeta("apple-mobile-web-app-capable", "yes");
   setMeta("apple-mobile-web-app-status-bar-style", "default");
+
+  const appleAppBannerContent = getAppleAppBannerContent(entry.url);
+  if (appleAppBannerContent) {
+    setMeta("apple-itunes-app", appleAppBannerContent);
+  }
 
   if (entry.icon_url) {
     setLink("icon", entry.icon_url);
@@ -415,7 +439,7 @@ function buildRedirectMap(entries) {
 async function listRedirects() {
   const { data, error } = await supabaseClient
     .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public")
     .order("id", { ascending: true });
 
   if (error) {
@@ -430,7 +454,7 @@ async function listRedirects() {
 async function getRedirectById(id) {
   const { data, error } = await supabaseClient
     .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public")
     .eq("id", id)
     .maybeSingle();
 
@@ -581,6 +605,8 @@ function startEditing(entry) {
   editingOriginalIconPath = entry.icon_path || "";
   editingOriginalCreatorKey = entry.creator_key || "";
   editingOriginalNetworkKey = entry.network_key || "";
+  editingOriginalIsPublic = entry.is_public !== false;
+  publicToggle.checked = editingOriginalIsPublic;
   previewImage.src = entry.icon_url || "";
   previewName.textContent = "現在のアイコン";
   previewWrap.hidden = !entry.icon_url;
@@ -612,8 +638,9 @@ async function refreshSavedItems() {
   const entries = await listRedirects();
   const identity = await getIdentity();
   const myEntries = entries.filter((entry) => canShowInMyList(entry, identity));
+  const publicEntries = entries.filter((entry) => entry.is_public !== false);
   renderRedirectItems(myItems, myList, myEntries, true);
-  renderRedirectItems(allItems, allList, entries, false);
+  renderRedirectItems(allItems, allList, publicEntries, false);
   return entries;
 }
 
@@ -864,7 +891,8 @@ if (form) {
         icon_url: finalIconUrl,
         icon_path: finalIconPath,
         creator_key: editingOriginalCreatorKey || identity.deviceKey,
-        network_key: editingOriginalNetworkKey || identity.networkKey
+        network_key: editingOriginalNetworkKey || identity.networkKey,
+        is_public: publicToggle.checked
       };
 
       await saveRedirect(entry, editingOriginalIconPath);
