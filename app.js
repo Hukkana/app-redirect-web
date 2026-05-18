@@ -584,6 +584,14 @@ async function deleteRedirectRemote(id, iconPath) {
   forgetOwnedRedirectId(id);
 }
 
+function canShowInMyList(entry, identity, ownedIds) {
+  return (
+    ownedIds.has(entry.id) ||
+    entry.creator_key === identity.deviceKey ||
+    Boolean(identity.networkKey && entry.network_key === identity.networkKey)
+  );
+}
+
 function renderRedirectItems(container, list, entries, showActions) {
   if (!list || !container) {
     return;
@@ -740,10 +748,15 @@ async function deleteRedirect(id) {
 }
 
 async function refreshSavedItems() {
-  const [entries, ownedEntries] = await Promise.all([listRedirects(), listOwnedRedirects()]);
+  const [entries, ownedEntries, identity] = await Promise.all([
+    listRedirects(),
+    listOwnedRedirects(),
+    getIdentity()
+  ]);
   const ownedIds = new Set(ownedEntries.map((entry) => entry.id));
-  const myEntries = entries.filter((entry) => ownedIds.has(entry.id));
+  const myEntries = entries.filter((entry) => canShowInMyList(entry, identity, ownedIds));
   const publicEntries = entries.filter((entry) => entry.is_public !== false);
+  saveOwnedRedirectIds(myEntries.map((entry) => entry.id));
   renderRedirectItems(myItems, myList, myEntries, true);
   renderRedirectItems(allItems, allList, publicEntries, false);
   return entries;
