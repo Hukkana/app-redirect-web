@@ -120,17 +120,16 @@
         }
 
         try {
-          var apiUrl =
-            SUPABASE_URL +
-            "/rest/v1/redirects?id=eq." +
-            encodeURIComponent(requestedId) +
-            "&select=id,url,title,icon_url,app_scheme";
+          var apiUrl = SUPABASE_URL + "/rest/v1/rpc/get_redirect_by_id";
 
           fetch(apiUrl, {
+            method: "POST",
             headers: {
               apikey: SUPABASE_ANON_KEY,
-              Authorization: "Bearer " + SUPABASE_ANON_KEY
-            }
+              Authorization: "Bearer " + SUPABASE_ANON_KEY,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ p_id: requestedId })
           })
             .then(function (response) {
               if (!response.ok) {
@@ -139,7 +138,7 @@
               return response.json();
             })
             .then(function (rows) {
-              var entry = rows && rows[0];
+              var entry = Array.isArray(rows) ? rows[0] : rows;
               if (!entry || !entry.url) {
                 return;
               }
@@ -217,7 +216,7 @@
             <input class="input squircle file-input" id="icon" name="icon" type="file" accept="image/*" required>
           </label>
 
-          <label class="toggle-row form-toggle" for="public-toggle">
+          <label class="toggle-row form-toggle" for="public-toggle" hidden>
             <span class="toggle-copy">
               <strong>みんなのリダイレクトに表示</strong>
               <small>OFFにすると、わたしのリダイレクトにだけ表示します。</small>
