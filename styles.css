@@ -315,6 +315,12 @@ h1 {
   background: rgba(255, 255, 255, 0.88);
 }
 
+a.secondary-button {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+}
+
 .saved-items {
   display: grid;
   gap: 10px;
@@ -368,6 +374,10 @@ h1 {
 
 .redirect-button {
   margin-top: 18px;
+}
+
+.redirect-fallback {
+  margin-top: 10px;
 }
 
 .modal-backdrop {
