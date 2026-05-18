@@ -185,14 +185,15 @@ window.APP_CONFIG = {
 `アプリを直接開くURL` は任意です。
 
 - 未入力: 通常通り `https://example.com` などのWeb URLへ移動します。
-- 入力あり: まず `chatgpt://` などのアプリURLを開き、約1.2秒後にWeb URLへ戻ります。
+- 入力あり: リダイレクトページに `アプリを開く` ボタンを表示します。ボタンを押すと、まず `chatgpt://` などのアプリURLを開き、約1.2秒後にWeb URLへ戻ります。
 
 例:
 
 - ChatGPT: `chatgpt://`
 - X/Twitter: 通常は `https://x.com` だけでもアプリが開くことがあります。必要な場合だけURL Schemeを指定します。
 
-iPhone Safariでは、自動リダイレクトからのURL Scheme起動がブロックされる場合があります。その場合は、即リダイレクトをOFFにして、リダイレクトページの `いま開く` ボタンから開く方が通りやすいです。
+iPhone Safariでは、自動リダイレクトからのURL Scheme起動や、JavaScriptを挟んだUniversal Link起動がブロックされる場合があります。
+そのため、このサイトではアプリURLが設定されている場合だけ、即リダイレクトではなく `アプリを開く` ボタン方式にしています。
 
 ## id の決まり方
 
