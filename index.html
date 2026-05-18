@@ -87,35 +87,15 @@
             if (host === "x.com" || host === "twitter.com") {
               return "app-id=333903271, app-argument=" + targetUrl;
             }
+
+            if (host === "chatgpt.com" || host === "chat.openai.com") {
+              return "app-id=6448311069, app-argument=" + targetUrl;
+            }
           } catch (error) {
             return "";
           }
 
           return "";
-        }
-
-        function openRedirectTarget(entry) {
-          if (!entry.app_scheme) {
-            window.location.replace(entry.url);
-            return;
-          }
-
-          var fallbackTimer = window.setTimeout(function () {
-            window.location.replace(entry.url);
-          }, 1200);
-
-          function clearFallback() {
-            window.clearTimeout(fallbackTimer);
-          }
-
-          window.addEventListener("pagehide", clearFallback, { once: true });
-          document.addEventListener("visibilitychange", function () {
-            if (document.hidden) {
-              clearFallback();
-            }
-          });
-
-          window.location.href = entry.app_scheme;
         }
 
         if (redirectParam) {
@@ -180,8 +160,8 @@
                 setLink("apple-touch-icon-precomposed", entry.icon_url);
               }
 
-              if (localStorage.getItem(AUTO_REDIRECT_KEY) !== "false") {
-                openRedirectTarget(entry);
+              if (localStorage.getItem(AUTO_REDIRECT_KEY) !== "false" && !entry.app_scheme) {
+                window.location.replace(entry.url);
               }
             })
             .catch(function (error) {
@@ -302,6 +282,7 @@
         <p class="lead" id="redirect-description">設定を確認しています。</p>
         <p class="redirect-link" id="redirect-link"></p>
         <button type="button" class="button squircle redirect-button" id="open-now-button" hidden>いま開く</button>
+        <a class="secondary-button squircle redirect-fallback" id="web-fallback-button" href="" hidden>Web版を開く</a>
       </section>
     </main>
 
