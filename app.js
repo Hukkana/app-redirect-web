@@ -4,6 +4,7 @@ const SUPABASE_ANON_KEY = APP_CONFIG.supabaseAnonKey || "";
 const SUPABASE_BUCKET = APP_CONFIG.supabaseBucket || "redirect-icons";
 const AUTO_REDIRECT_KEY = "redirect-builder:auto-redirect";
 const DEVICE_KEY = "redirect-builder:device-id";
+const OWNED_REDIRECT_IDS_KEY = "redirect-builder:owned-redirect-ids";
 
 const builderView = document.getElementById("builder-view");
 const redirectView = document.getElementById("redirect-view");
@@ -47,12 +48,12 @@ const CACHE_PREFIX = "redirect-builder:cache:";
 const supabaseClient =
   SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false
-        }
-      })
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
+    })
     : null;
 
 let iconDataUrl = "";
@@ -84,6 +85,10 @@ function formatSupabaseError(prefix, error) {
 
   if (message.includes("column redirects.app_scheme does not exist")) {
     return "Supabaseの `redirects` テーブルに `app_scheme` 列がまだありません。SQL Editor で `alter table public.redirects add column if not exists app_scheme text;` を実行してください。";
+  }
+
+  if (message.includes("Could not find the function public.get_redirect_by_id")) {
+    return "Supabaseに `get_redirect_by_id` 関数がまだありません。README の「全件一覧を見えなくするSQL」をSQL Editorで実行してください。";
   }
 
   return `${prefix}: ${message || "unknown error"}`;
@@ -175,6 +180,31 @@ function cacheRedirect(entry) {
   } catch {
     // ignore cache failures
   }
+}
+
+function getOwnedRedirectIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OWNED_REDIRECT_IDS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string" && id) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOwnedRedirectIds(ids) {
+  try {
+    localStorage.setItem(OWNED_REDIRECT_IDS_KEY, JSON.stringify([...new Set(ids)]));
+  } catch {
+    // ignore ownership cache failures
+  }
+}
+
+function rememberOwnedRedirectId(id) {
+  saveOwnedRedirectIds([...getOwnedRedirectIds(), id]);
+}
+
+function forgetOwnedRedirectId(id) {
+  saveOwnedRedirectIds(getOwnedRedirectIds().filter((ownedId) => ownedId !== id));
 }
 
 function clearRedirectCache(id) {
@@ -305,20 +335,12 @@ function normalizeDomainPart(value) {
     .replace(/^-|-$/g, "");
 }
 
-function createIdFromUrl(targetUrl, redirectsById) {
+function createIdFromUrl(targetUrl, suffix = 1) {
   const hostname = targetUrl.hostname.replace(/^www\./, "");
   const parts = hostname.split(".").filter(Boolean);
   const domainBase = parts.length >= 2 ? parts[parts.length - 2] : parts[0] || "link";
   const baseId = normalizeDomainPart(domainBase) || "link";
-  let candidate = baseId;
-  let suffix = 2;
-
-  while (redirectsById[candidate]) {
-    candidate = `${baseId}-${suffix}`;
-    suffix += 1;
-  }
-
-  return candidate;
+  return suffix <= 1 ? baseId : `${baseId}-${suffix}`;
 }
 
 function getPathSegments() {
@@ -447,41 +469,50 @@ function getRequestedId() {
   return decodeURIComponent(last);
 }
 
-function buildRedirectMap(entries) {
-  return Object.fromEntries(entries.map((entry) => [entry.id, entry]));
-}
-
-async function listRedirects() {
-  const { data, error } = await supabaseClient
-    .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme")
-    .order("id", { ascending: true });
-
-  if (error) {
-    throw new Error(formatSupabaseError("リダイレクト一覧の取得に失敗しました", error));
-  }
-
-  const entries = data || [];
-  entries.forEach(cacheRedirect);
-  return entries;
-}
-
 async function getRedirectById(id) {
-  const { data, error } = await supabaseClient
-    .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme")
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await supabaseClient.rpc("get_redirect_by_id", {
+    p_id: id
+  });
 
   if (error) {
     throw new Error(formatSupabaseError("リダイレクト設定の取得に失敗しました", error));
   }
 
-  if (data) {
-    cacheRedirect(data);
+  const entry = Array.isArray(data) ? data[0] : data;
+
+  if (entry) {
+    cacheRedirect(entry);
   }
 
-  return data;
+  return entry || null;
+}
+
+async function listOwnedRedirects() {
+  const ids = getOwnedRedirectIds();
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        return await getRedirectById(id);
+      } catch {
+        return null;
+      }
+    })
+  );
+  const entries = results.filter(Boolean);
+  saveOwnedRedirectIds(entries.map((entry) => entry.id));
+  return entries.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function findAvailableId(targetUrl) {
+  for (let suffix = 1; suffix <= 50; suffix += 1) {
+    const candidate = createIdFromUrl(targetUrl, suffix);
+    const existing = await getRedirectById(candidate);
+    if (!existing) {
+      return candidate;
+    }
+  }
+
+  return `link-${Date.now().toString(36)}`;
 }
 
 async function uploadIcon(id, blob) {
@@ -511,10 +542,20 @@ async function removeIcon(path) {
   }
 }
 
-async function saveRedirect(entry, originalIconPath = "") {
-  const { error } = await supabaseClient.from("redirects").upsert(entry, {
-    onConflict: "id"
-  });
+async function saveRedirect(entry, originalIconPath = "", isEditing = false) {
+  const { error } = isEditing
+    ? await supabaseClient.rpc("update_redirect_by_id", {
+        p_id: entry.id,
+        p_url: entry.url,
+        p_title: entry.title,
+        p_icon_url: entry.icon_url,
+        p_icon_path: entry.icon_path,
+        p_creator_key: entry.creator_key,
+        p_network_key: entry.network_key,
+        p_is_public: entry.is_public,
+        p_app_scheme: entry.app_scheme
+      })
+    : await supabaseClient.from("redirects").insert(entry);
 
   if (error) {
     if (entry.icon_path && entry.icon_path !== originalIconPath) {
@@ -524,23 +565,20 @@ async function saveRedirect(entry, originalIconPath = "") {
   }
 
   cacheRedirect(entry);
+  rememberOwnedRedirectId(entry.id);
 }
 
 async function deleteRedirectRemote(id, iconPath) {
-  const { error } = await supabaseClient.from("redirects").delete().eq("id", id);
+  const { error } = await supabaseClient.rpc("delete_redirect_by_id", {
+    p_id: id
+  });
   if (error) {
     throw new Error(formatSupabaseError("削除に失敗しました", error));
   }
 
   await removeIcon(iconPath);
   clearRedirectCache(id);
-}
-
-function canShowInMyList(entry, identity) {
-  return (
-    entry.creator_key === identity.deviceKey ||
-    Boolean(identity.networkKey && entry.network_key === identity.networkKey)
-  );
+  forgetOwnedRedirectId(id);
 }
 
 function renderRedirectItems(container, list, entries, showActions) {
@@ -564,13 +602,12 @@ function renderRedirectItems(container, list, entries, showActions) {
       <a class="saved-item-link" href="${buildRedirectUrl(entry.id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(entry.id)}</a>
       <p class="saved-item-meta">${entry.url}</p>
       ${entry.app_scheme ? `<p class="saved-item-meta">アプリURL: ${entry.app_scheme}</p>` : ""}
-      ${
-        showActions
-          ? `<div class="saved-item-actions">
+      ${showActions
+        ? `<div class="saved-item-actions">
               <button type="button" class="saved-action edit" data-action="edit" data-id="${entry.id}">編集</button>
               <button type="button" class="saved-action delete" data-action="delete" data-id="${entry.id}">削除</button>
             </div>`
-          : ""
+        : ""
       }
     `;
     container.appendChild(item);
@@ -700,12 +737,11 @@ async function deleteRedirect(id) {
 }
 
 async function refreshSavedItems() {
-  const entries = await listRedirects();
-  const identity = await getIdentity();
-  const myEntries = entries.filter((entry) => canShowInMyList(entry, identity));
-  const publicEntries = entries.filter((entry) => entry.is_public !== false);
-  renderRedirectItems(myItems, myList, myEntries, true);
-  renderRedirectItems(allItems, allList, publicEntries, false);
+  const entries = await listOwnedRedirects();
+  renderRedirectItems(myItems, myList, entries, true);
+  if (allList) {
+    allList.hidden = true;
+  }
   return entries;
 }
 
@@ -940,9 +976,7 @@ if (form) {
       }
 
       const editingId = editingIdInput.value;
-      const entries = await listRedirects();
-      const redirectsById = buildRedirectMap(entries);
-      const id = editingId || createIdFromUrl(parsedUrl, redirectsById);
+      const id = editingId || (await findAvailableId(parsedUrl));
       const identity = await getIdentity();
 
       let finalIconUrl = editingOriginalIconUrl;
@@ -970,7 +1004,7 @@ if (form) {
         app_scheme: trimmedAppScheme || null
       };
 
-      await saveRedirect(entry, editingOriginalIconPath);
+      await saveRedirect(entry, editingOriginalIconPath, Boolean(editingId));
 
       if (editingOriginalIconPath && editingOriginalIconPath !== finalIconPath) {
         await removeIcon(editingOriginalIconPath);
