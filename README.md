@@ -22,7 +22,7 @@
 - `/:id` 形式のURLを発行
 - アクセス時に即リダイレクト
 - `わたしのリダイレクト` に、このブラウザで作成したリダイレクトを表示
-- 他の人のリダイレクト一覧は表示しない
+- `みんなのリダイレクト` に、公開設定のリダイレクトを表示
 - スマホでも使えるシンプルなUI
 
 ## GitHub Pages 版について
@@ -170,6 +170,12 @@ $$;
 grant execute on function public.update_redirect_by_id(text, text, text, text, text, text, text, boolean, text) to anon;
 grant execute on function public.delete_redirect_by_id(text) to anon;
 
+create policy "redirects are readable by everyone"
+on public.redirects
+for select
+to anon
+using (true);
+
 create policy "redirects are writable by everyone"
 on public.redirects
 for insert
@@ -202,8 +208,8 @@ to anon
 using (bucket_id = 'redirect-icons');
 ```
 
-このSQLでは、`redirects` テーブルを全件取得する `select` は許可しません。
-代わりに、リダイレクトページを開くために必要な `id` 指定の取得だけを `get_redirect_by_id` 関数で許可します。
+このSQLでは、`redirects` テーブルの読み取りを許可します。
+そのため、アプリ上では `みんなのリダイレクト` に公開設定のリダイレクトが表示されます。
 
 すでに `redirects` テーブルを作成済みで、`creator_key`、`network_key`、`is_public`、`app_scheme` がない場合は、追加で次のSQLを実行します。
 
@@ -287,12 +293,13 @@ iPhone Safariでは、自動リダイレクトからのURL Scheme起動や、Jav
 - 別の端末
 - 同じWi-Fiでなくても可
 
-ただし、他の人のリダイレクト一覧は取得しません。
-`わたしのリダイレクト` には、このブラウザで作成したIDだけをローカルに保存して表示します。
+`みんなのリダイレクト` には、公開設定のリダイレクトが表示されます。
+`わたしのリダイレクト` には、このブラウザで作成したIDをローカルに保存して表示します。
 
 リダイレクトページの仕組み上、正確な `/id` を知っている人はそのリダイレクトを開けます。
 これは「専用URLを共有したら開ける」ために必要な仕様です。
-一方で、Supabaseから全件一覧を取って他の人のリダイレクトを眺める動きは、RLSとRPCで止めます。
+「みんなのリダイレクト」を使うため、公開設定のリダイレクトは他の人からも見えます。
+見せたくない場合は、作成時または編集時に `みんなのリダイレクトに表示` をOFFにしてください。
 
 ## ローカル開発用ファイル
 
