@@ -35,6 +35,7 @@ const redirectDescription = document.getElementById("redirect-description");
 const redirectLink = document.getElementById("redirect-link");
 const autoRedirectToggle = document.getElementById("auto-redirect-toggle");
 const openNowButton = document.getElementById("open-now-button");
+const webFallbackButton = document.getElementById("web-fallback-button");
 const deleteModal = document.getElementById("delete-modal");
 const deleteModalText = document.getElementById("delete-modal-text");
 const deleteCancelButton = document.getElementById("delete-cancel-button");
@@ -389,6 +390,10 @@ function getAppleAppBannerContent(targetUrl) {
     if (host === "x.com" || host === "twitter.com") {
       return `app-id=333903271, app-argument=${targetUrl}`;
     }
+
+    if (host === "chatgpt.com" || host === "chat.openai.com") {
+      return `app-id=6448311069, app-argument=${targetUrl}`;
+    }
   } catch {
     return "";
   }
@@ -600,21 +605,31 @@ function showRedirectView(entry) {
   builderView.hidden = true;
   redirectView.hidden = false;
 
+  const hasAppScheme = Boolean(entry.app_scheme);
+
   applyWebAppMetadata(entry);
   redirectTitle.textContent = entry.title;
-  redirectDescription.textContent = loadAutoRedirectEnabled()
-    ? "移動中です…"
-    : "即リダイレクトは一時的にOFFです。ホーム画面に追加したあとで開いてください。";
+  redirectDescription.textContent = hasAppScheme
+    ? "iPhoneでは自動起動がブロックされることがあるため、下のボタンからアプリを開きます。"
+    : loadAutoRedirectEnabled()
+      ? "移動中です…"
+      : "即リダイレクトは一時的にOFFです。ホーム画面に追加したあとで開いてください。";
   redirectLink.textContent = entry.url;
 
   if (openNowButton) {
-    openNowButton.hidden = loadAutoRedirectEnabled();
+    openNowButton.hidden = !hasAppScheme && loadAutoRedirectEnabled();
+    openNowButton.textContent = hasAppScheme ? "アプリを開く" : "いま開く";
     openNowButton.onclick = () => {
       openRedirectTarget(entry);
     };
   }
 
-  if (loadAutoRedirectEnabled()) {
+  if (webFallbackButton) {
+    webFallbackButton.hidden = !hasAppScheme;
+    webFallbackButton.href = entry.url;
+  }
+
+  if (loadAutoRedirectEnabled() && !hasAppScheme) {
     openRedirectTarget(entry);
   }
 }
