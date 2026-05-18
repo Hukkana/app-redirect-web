@@ -601,6 +601,14 @@ function openRedirectTarget(entry) {
   window.location.href = entry.app_scheme;
 }
 
+function tryOpenAppWithoutFallback(entry) {
+  if (!entry.app_scheme) {
+    return;
+  }
+
+  window.location.href = entry.app_scheme;
+}
+
 function showRedirectView(entry) {
   builderView.hidden = true;
   redirectView.hidden = false;
@@ -610,7 +618,7 @@ function showRedirectView(entry) {
   applyWebAppMetadata(entry);
   redirectTitle.textContent = entry.title;
   redirectDescription.textContent = hasAppScheme
-    ? "iPhoneでは自動起動がブロックされることがあるため、下のボタンからアプリを開きます。"
+    ? "アプリ起動の確認を自動で試しています。出ない場合は下のボタンから開いてください。"
     : loadAutoRedirectEnabled()
       ? "移動中です…"
       : "即リダイレクトは一時的にOFFです。ホーム画面に追加したあとで開いてください。";
@@ -631,6 +639,12 @@ function showRedirectView(entry) {
 
   if (loadAutoRedirectEnabled() && !hasAppScheme) {
     openRedirectTarget(entry);
+  }
+
+  if (loadAutoRedirectEnabled() && hasAppScheme) {
+    window.setTimeout(() => {
+      tryOpenAppWithoutFallback(entry);
+    }, 150);
   }
 }
 
