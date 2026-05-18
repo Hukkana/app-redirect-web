@@ -21,8 +21,8 @@
 - ドメイン名ベースの `id` を自動生成
 - `/:id` 形式のURLを発行
 - アクセス時に即リダイレクト
-- `みんなのリダイレクト` に全員のリダイレクトを表示
-- `わたしのリダイレクト` に自分または同じネットワークのリダイレクトを表示
+- `わたしのリダイレクト` に、このブラウザで作成したリダイレクトを表示
+- 他の人のリダイレクト一覧は表示しない
 - スマホでも使えるシンプルなUI
 
 ## GitHub Pages 版について
@@ -87,30 +87,94 @@ create table if not exists public.redirects (
 ```sql
 alter table public.redirects enable row level security;
 
-create policy "redirects are readable by everyone"
-on public.redirects
-for select
-to anon
-using (true);
+drop policy if exists "redirects are readable by everyone" on public.redirects;
+drop policy if exists "redirects are writable by everyone" on public.redirects;
+drop policy if exists "redirects are updatable by everyone" on public.redirects;
+drop policy if exists "redirects are deletable by everyone" on public.redirects;
+drop policy if exists "icons are readable by everyone" on storage.objects;
+drop policy if exists "icons are writable by everyone" on storage.objects;
+drop policy if exists "icons are updatable by everyone" on storage.objects;
+drop policy if exists "icons are deletable by everyone" on storage.objects;
+
+drop function if exists public.get_redirect_by_id(text);
+drop function if exists public.update_redirect_by_id(text, text, text, text, text, text, text, boolean, text);
+drop function if exists public.delete_redirect_by_id(text);
+
+create or replace function public.get_redirect_by_id(p_id text)
+returns table (
+  id text,
+  url text,
+  title text,
+  icon_url text,
+  icon_path text,
+  app_scheme text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    redirects.id,
+    redirects.url,
+    redirects.title,
+    redirects.icon_url,
+    redirects.icon_path,
+    redirects.app_scheme
+  from public.redirects
+  where redirects.id = p_id
+  limit 1;
+$$;
+
+grant execute on function public.get_redirect_by_id(text) to anon;
+
+create or replace function public.update_redirect_by_id(
+  p_id text,
+  p_url text,
+  p_title text,
+  p_icon_url text,
+  p_icon_path text,
+  p_creator_key text,
+  p_network_key text,
+  p_is_public boolean,
+  p_app_scheme text
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.redirects
+  set
+    url = p_url,
+    title = p_title,
+    icon_url = p_icon_url,
+    icon_path = p_icon_path,
+    creator_key = p_creator_key,
+    network_key = p_network_key,
+    is_public = p_is_public,
+    app_scheme = p_app_scheme
+  where id = p_id;
+$$;
+
+create or replace function public.delete_redirect_by_id(p_id text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.redirects
+  where id = p_id;
+$$;
+
+grant execute on function public.update_redirect_by_id(text, text, text, text, text, text, text, boolean, text) to anon;
+grant execute on function public.delete_redirect_by_id(text) to anon;
 
 create policy "redirects are writable by everyone"
 on public.redirects
 for insert
 to anon
 with check (true);
-
-create policy "redirects are updatable by everyone"
-on public.redirects
-for update
-to anon
-using (true)
-with check (true);
-
-create policy "redirects are deletable by everyone"
-on public.redirects
-for delete
-to anon
-using (true);
 
 create policy "icons are readable by everyone"
 on storage.objects
@@ -137,6 +201,9 @@ for delete
 to anon
 using (bucket_id = 'redirect-icons');
 ```
+
+このSQLでは、`redirects` テーブルを全件取得する `select` は許可しません。
+代わりに、リダイレクトページを開くために必要な `id` 指定の取得だけを `get_redirect_by_id` 関数で許可します。
 
 すでに `redirects` テーブルを作成済みで、`creator_key`、`network_key`、`is_public`、`app_scheme` がない場合は、追加で次のSQLを実行します。
 
@@ -220,8 +287,12 @@ iPhone Safariでは、自動リダイレクトからのURL Scheme起動や、Jav
 - 別の端末
 - 同じWi-Fiでなくても可
 
-`わたしのリダイレクト` の判定には、ブラウザごとのIDとネットワークの外向きIPを使います。
-ブラウザからWi-Fi名そのものは取得できないため、同じWi-Fiかどうかは「同じグローバルIPかどうか」で近似しています。
+ただし、他の人のリダイレクト一覧は取得しません。
+`わたしのリダイレクト` には、このブラウザで作成したIDだけをローカルに保存して表示します。
+
+リダイレクトページの仕組み上、正確な `/id` を知っている人はそのリダイレクトを開けます。
+これは「専用URLを共有したら開ける」ために必要な仕様です。
+一方で、Supabaseから全件一覧を取って他の人のリダイレクトを眺める動きは、RLSとRPCで止めます。
 
 ## ローカル開発用ファイル
 
