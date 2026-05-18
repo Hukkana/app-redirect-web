@@ -88,7 +88,7 @@ function formatSupabaseError(prefix, error) {
   }
 
   if (message.includes("Could not find the function public.get_redirect_by_id")) {
-    return "Supabaseに `get_redirect_by_id` 関数がまだありません。README の「全件一覧を見えなくするSQL」をSQL Editorで実行してください。";
+    return "Supabaseに `get_redirect_by_id` 関数がまだありません。README のSupabaseセットアップSQLをSQL Editorで実行してください。";
   }
 
   return `${prefix}: ${message || "unknown error"}`;
@@ -487,6 +487,21 @@ async function getRedirectById(id) {
   return entry || null;
 }
 
+async function listRedirects() {
+  const { data, error } = await supabaseClient
+    .from("redirects")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme")
+    .order("id", { ascending: true });
+
+  if (error) {
+    throw new Error(formatSupabaseError("リダイレクト一覧の取得に失敗しました", error));
+  }
+
+  const entries = data || [];
+  entries.forEach(cacheRedirect);
+  return entries;
+}
+
 async function listOwnedRedirects() {
   const ids = getOwnedRedirectIds();
   const results = await Promise.all(
@@ -501,18 +516,6 @@ async function listOwnedRedirects() {
   const entries = results.filter(Boolean);
   saveOwnedRedirectIds(entries.map((entry) => entry.id));
   return entries.sort((a, b) => a.id.localeCompare(b.id));
-}
-
-async function findAvailableId(targetUrl) {
-  for (let suffix = 1; suffix <= 50; suffix += 1) {
-    const candidate = createIdFromUrl(targetUrl, suffix);
-    const existing = await getRedirectById(candidate);
-    if (!existing) {
-      return candidate;
-    }
-  }
-
-  return `link-${Date.now().toString(36)}`;
 }
 
 async function uploadIcon(id, blob) {
@@ -737,11 +740,12 @@ async function deleteRedirect(id) {
 }
 
 async function refreshSavedItems() {
-  const entries = await listOwnedRedirects();
-  renderRedirectItems(myItems, myList, entries, true);
-  if (allList) {
-    allList.hidden = true;
-  }
+  const [entries, ownedEntries] = await Promise.all([listRedirects(), listOwnedRedirects()]);
+  const ownedIds = new Set(ownedEntries.map((entry) => entry.id));
+  const myEntries = entries.filter((entry) => ownedIds.has(entry.id));
+  const publicEntries = entries.filter((entry) => entry.is_public !== false);
+  renderRedirectItems(myItems, myList, myEntries, true);
+  renderRedirectItems(allItems, allList, publicEntries, false);
   return entries;
 }
 
@@ -976,7 +980,14 @@ if (form) {
       }
 
       const editingId = editingIdInput.value;
-      const id = editingId || (await findAvailableId(parsedUrl));
+      const entries = await listRedirects();
+      const existingIds = new Set(entries.map((entry) => entry.id));
+      let id = editingId || createIdFromUrl(parsedUrl);
+      let suffix = 2;
+      while (!editingId && existingIds.has(id)) {
+        id = createIdFromUrl(parsedUrl, suffix);
+        suffix += 1;
+      }
       const identity = await getIdentity();
 
       let finalIconUrl = editingOriginalIconUrl;
