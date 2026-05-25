@@ -5,6 +5,8 @@ const SUPABASE_BUCKET = APP_CONFIG.supabaseBucket || "redirect-icons";
 const AUTO_REDIRECT_KEY = "redirect-builder:auto-redirect";
 const DEVICE_KEY = "redirect-builder:device-id";
 const OWNED_REDIRECT_IDS_KEY = "redirect-builder:owned-redirect-ids";
+const CREATOR_NAME_KEY = "redirect-builder:creator-name";
+const CREATOR_NAME_PUBLIC_KEY = "redirect-builder:creator-name-public";
 
 const builderView = document.getElementById("builder-view");
 const redirectView = document.getElementById("redirect-view");
@@ -41,6 +43,9 @@ const deleteModal = document.getElementById("delete-modal");
 const deleteModalText = document.getElementById("delete-modal-text");
 const deleteCancelButton = document.getElementById("delete-cancel-button");
 const deleteConfirmButton = document.getElementById("delete-confirm-button");
+const creatorNameInput = document.getElementById("creator-name-input");
+const saveNameButton = document.getElementById("save-name-button");
+const namePublicToggle = document.getElementById("name-public-toggle");
 
 const DEFAULT_ICON_SIZE = 180;
 const CACHE_PREFIX = "redirect-builder:cache:";
@@ -117,6 +122,22 @@ function saveAutoRedirectEnabled(enabled) {
   } catch {
     setStatus("即リダイレクト設定の保存に失敗しました。", true);
   }
+}
+
+function loadCreatorName() {
+  try { return localStorage.getItem(CREATOR_NAME_KEY) || ""; } catch { return ""; }
+}
+
+function saveCreatorName(name) {
+  try { localStorage.setItem(CREATOR_NAME_KEY, name); } catch {}
+}
+
+function loadNamePublic() {
+  try { return localStorage.getItem(CREATOR_NAME_PUBLIC_KEY) !== "false"; } catch { return true; }
+}
+
+function saveNamePublic(enabled) {
+  try { localStorage.setItem(CREATOR_NAME_PUBLIC_KEY, enabled ? "true" : "false"); } catch {}
 }
 
 function createRandomId() {
@@ -490,7 +511,7 @@ async function getRedirectById(id) {
 async function listRedirects() {
   const { data, error } = await supabaseClient
     .from("redirects")
-    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme")
+    .select("id, url, title, icon_url, icon_path, creator_key, network_key, is_public, app_scheme, creator_name")
     .order("id", { ascending: true });
 
   if (error) {
@@ -556,7 +577,8 @@ async function saveRedirect(entry, originalIconPath = "", isEditing = false) {
         p_creator_key: entry.creator_key,
         p_network_key: entry.network_key,
         p_is_public: entry.is_public,
-        p_app_scheme: entry.app_scheme
+        p_app_scheme: entry.app_scheme,
+        p_creator_name: entry.creator_name
       })
     : await supabaseClient.from("redirects").insert(entry);
 
@@ -592,7 +614,7 @@ function canShowInMyList(entry, identity, ownedIds) {
   );
 }
 
-function renderRedirectItems(container, list, entries, showActions) {
+function renderRedirectItems(container, list, entries, showActions, useLocalName = false) {
   if (!list || !container) {
     return;
   }
@@ -606,6 +628,9 @@ function renderRedirectItems(container, list, entries, showActions) {
   }
 
   entries.forEach((entry) => {
+    const nameToShow = useLocalName
+      ? loadCreatorName()
+      : (entry.creator_name || "");
     const item = document.createElement("article");
     item.className = "saved-item";
     item.innerHTML = `
@@ -613,6 +638,7 @@ function renderRedirectItems(container, list, entries, showActions) {
       <a class="saved-item-link" href="${buildRedirectUrl(entry.id)}" target="_blank" rel="noreferrer">${buildRedirectUrl(entry.id)}</a>
       <p class="saved-item-meta">${entry.url}</p>
       ${entry.app_scheme ? `<p class="saved-item-meta">アプリURL: ${entry.app_scheme}</p>` : ""}
+      ${nameToShow ? `<p class="saved-item-meta">作成者: ${nameToShow}</p>` : ""}
       ${showActions
         ? `<div class="saved-item-actions">
               <button type="button" class="saved-action edit" data-action="edit" data-id="${entry.id}">編集</button>
@@ -757,8 +783,8 @@ async function refreshSavedItems() {
   const myEntries = entries.filter((entry) => canShowInMyList(entry, identity, ownedIds));
   const publicEntries = entries.filter((entry) => entry.is_public !== false);
   saveOwnedRedirectIds(myEntries.map((entry) => entry.id));
-  renderRedirectItems(myItems, myList, myEntries, true);
-  renderRedirectItems(allItems, allList, publicEntries, false);
+  renderRedirectItems(myItems, myList, myEntries, true, true);
+  renderRedirectItems(allItems, allList, publicEntries, false, false);
   return entries;
 }
 
@@ -1016,6 +1042,9 @@ if (form) {
         throw new Error("アイコン画像を選択してください。");
       }
 
+      const creatorName = loadCreatorName().trim();
+      const nameIsPublic = loadNamePublic();
+
       const entry = {
         id,
         url: parsedUrl.toString(),
@@ -1025,7 +1054,8 @@ if (form) {
         creator_key: editingOriginalCreatorKey || identity.deviceKey,
         network_key: editingOriginalNetworkKey || identity.networkKey,
         is_public: publicToggle.checked,
-        app_scheme: trimmedAppScheme || null
+        app_scheme: trimmedAppScheme || null,
+        creator_name: (creatorName && nameIsPublic) ? creatorName : null
       };
 
       await saveRedirect(entry, editingOriginalIconPath, Boolean(editingId));
@@ -1057,6 +1087,26 @@ if (copyButton) {
     } catch {
       setStatus("コピーに失敗しました。", true);
     }
+  });
+}
+
+if (creatorNameInput && saveNameButton && namePublicToggle) {
+  creatorNameInput.value = loadCreatorName();
+  namePublicToggle.checked = loadNamePublic();
+
+  saveNameButton.addEventListener("click", () => {
+    const name = creatorNameInput.value.trim();
+    saveCreatorName(name);
+    setStatus(name ? `名前を「${name}」に保存しました。` : "名前を削除しました。");
+  });
+
+  namePublicToggle.addEventListener("change", (event) => {
+    saveNamePublic(event.target.checked);
+    setStatus(
+      event.target.checked
+        ? "みんなのリダイレクトに名前を表示するようにしました。"
+        : "みんなのリダイレクトに名前を表示しないようにしました。"
+    );
   });
 }
 
