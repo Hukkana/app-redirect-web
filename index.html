@@ -262,6 +262,22 @@
           </div>
         </section>
 
+        <section class="name-settings" id="name-settings">
+          <p class="result-label">あなたの名前</p>
+          <div class="name-row">
+            <input class="input squircle" id="creator-name-input" type="text" placeholder="名前を入力（任意）" maxlength="40">
+            <button type="button" class="secondary-button squircle" id="save-name-button">保存</button>
+          </div>
+          <label class="toggle-row form-toggle" for="name-public-toggle">
+            <span class="toggle-copy">
+              <strong>みんなのリダイレクトに名前を表示</strong>
+              <small>OFFにすると、わたしのリダイレクトにだけ名前が表示されます。</small>
+            </span>
+            <input id="name-public-toggle" class="toggle-input" type="checkbox" checked>
+            <span class="toggle-ui" aria-hidden="true"></span>
+          </label>
+        </section>
+
         <section id="my-list" class="saved-list" hidden>
           <p class="result-label">わたしのリダイレクト</p>
           <div id="my-items" class="saved-items"></div>
