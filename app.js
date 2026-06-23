@@ -47,7 +47,8 @@ const creatorNameInput = document.getElementById("creator-name-input");
 const saveNameButton = document.getElementById("save-name-button");
 const namePublicToggle = document.getElementById("name-public-toggle");
 
-const DEFAULT_ICON_SIZE = 180;
+const DEFAULT_ICON_SIZE = 512;
+const LIQUID_GLASS_ICON_PADDING_RATIO = 0.2;
 const CACHE_PREFIX = "redirect-builder:cache:";
 
 const supabaseClient =
@@ -129,7 +130,7 @@ function loadCreatorName() {
 }
 
 function saveCreatorName(name) {
-  try { localStorage.setItem(CREATOR_NAME_KEY, name); } catch {}
+  try { localStorage.setItem(CREATOR_NAME_KEY, name); } catch { }
 }
 
 function loadNamePublic() {
@@ -137,7 +138,7 @@ function loadNamePublic() {
 }
 
 function saveNamePublic(enabled) {
-  try { localStorage.setItem(CREATOR_NAME_PUBLIC_KEY, enabled ? "true" : "false"); } catch {}
+  try { localStorage.setItem(CREATOR_NAME_PUBLIC_KEY, enabled ? "true" : "false"); } catch { }
 }
 
 function createRandomId() {
@@ -292,13 +293,13 @@ async function fileToIconAssets(source) {
   canvas.width = size;
   canvas.height = size;
 
-  const scale = Math.max(size / image.width, size / image.height);
+  const padding = size * LIQUID_GLASS_ICON_PADDING_RATIO;
+  const safeArea = size - padding * 2;
+  const scale = Math.min(safeArea / image.width, safeArea / image.height);
   const drawWidth = image.width * scale;
   const drawHeight = image.height * scale;
-  const overflowX = Math.max(0, drawWidth - size);
-  const overflowY = Math.max(0, drawHeight - size);
-  const offsetX = -overflowX * positionX;
-  const offsetY = -overflowY * positionY;
+  const offsetX = padding + (safeArea - drawWidth) * positionX;
+  const offsetY = padding + (safeArea - drawHeight) * positionY;
 
   context.clearRect(0, 0, size, size);
   context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
@@ -344,7 +345,7 @@ async function regenerateSelectedIcon() {
   iconDataUrl = iconAssets.dataUrl;
   iconBlob = iconAssets.blob;
   previewImage.src = iconDataUrl;
-  previewName.textContent = `${selectedIconSourceName} を ${getIconSize()}x${getIconSize()} に調整`;
+  previewName.textContent = `${selectedIconSourceName} を ${getIconSize()}x${getIconSize()} の透過余白つきアイコンに調整`;
   previewWrap.hidden = false;
 }
 
@@ -425,6 +426,52 @@ function setLink(rel, href, sizes = "") {
   element.href = href;
 }
 
+function setTypedLink(rel, href, type = "", sizes = "") {
+  const selector = sizes ? `link[rel="${rel}"][sizes="${sizes}"]` : `link[rel="${rel}"]`;
+  let element = document.querySelector(selector);
+
+  if (!element) {
+    element = document.createElement("link");
+    element.rel = rel;
+    if (sizes) {
+      element.sizes = sizes;
+    }
+    document.head.appendChild(element);
+  }
+
+  if (type) {
+    element.type = type;
+  }
+  element.href = href;
+}
+
+function setDynamicManifest(entry) {
+  if (!entry.icon_url) {
+    return;
+  }
+
+  const manifest = {
+    name: entry.title,
+    short_name: entry.title,
+    start_url: buildRedirectUrl(entry.id),
+    scope: `${window.location.origin}${getBasePath()}/`,
+    display: "standalone",
+    background_color: "#ffffff",
+    theme_color: "#ffffff",
+    icons: [
+      {
+        src: entry.icon_url,
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any"
+      }
+    ]
+  };
+  const manifestJson = JSON.stringify(manifest);
+  const manifestUrl = `data:application/manifest+json;charset=utf-8,${encodeURIComponent(manifestJson)}`;
+  setTypedLink("manifest", manifestUrl, "application/manifest+json");
+}
+
 function getAppleAppBannerContent(targetUrl) {
   try {
     const parsed = new URL(targetUrl);
@@ -448,7 +495,7 @@ function applyWebAppMetadata(entry) {
   document.title = entry.title;
   setMeta("apple-mobile-web-app-title", entry.title);
   setMeta("apple-mobile-web-app-capable", "yes");
-  setMeta("apple-mobile-web-app-status-bar-style", "default");
+  setMeta("apple-mobile-web-app-status-bar-style", "black-translucent");
 
   const appleAppBannerContent = getAppleAppBannerContent(entry.url);
   if (appleAppBannerContent) {
@@ -456,9 +503,11 @@ function applyWebAppMetadata(entry) {
   }
 
   if (entry.icon_url) {
-    setLink("icon", entry.icon_url);
+    setTypedLink("icon", entry.icon_url, "image/png");
+    setTypedLink("apple-touch-icon", entry.icon_url, "image/png", "512x512");
     setLink("apple-touch-icon", entry.icon_url);
     setLink("apple-touch-icon-precomposed", entry.icon_url);
+    setDynamicManifest(entry);
   }
 }
 
@@ -569,17 +618,17 @@ async function removeIcon(path) {
 async function saveRedirect(entry, originalIconPath = "", isEditing = false) {
   const { error } = isEditing
     ? await supabaseClient.rpc("update_redirect_by_id", {
-        p_id: entry.id,
-        p_url: entry.url,
-        p_title: entry.title,
-        p_icon_url: entry.icon_url,
-        p_icon_path: entry.icon_path,
-        p_creator_key: entry.creator_key,
-        p_network_key: entry.network_key,
-        p_is_public: entry.is_public,
-        p_app_scheme: entry.app_scheme,
-        p_creator_name: entry.creator_name
-      })
+      p_id: entry.id,
+      p_url: entry.url,
+      p_title: entry.title,
+      p_icon_url: entry.icon_url,
+      p_icon_path: entry.icon_path,
+      p_creator_key: entry.creator_key,
+      p_network_key: entry.network_key,
+      p_is_public: entry.is_public,
+      p_app_scheme: entry.app_scheme,
+      p_creator_name: entry.creator_name
+    })
     : await supabaseClient.from("redirects").insert(entry);
 
   if (error) {
